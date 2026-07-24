@@ -45,6 +45,16 @@ export {
   deleteTestInstance
 } from './clients/testInstanceService'
 
+// ============================================
+// CLIENT FOLLOWUP REPORTS API
+// ============================================
+export {
+  getClientFollowups,
+  createFollowup,
+  updateFollowup,
+  deleteFollowup
+} from './clients/followupService'
+
 export {
   uploadTestAttachment
 } from './clients/testAttachmentService'

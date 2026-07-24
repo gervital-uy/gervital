@@ -31,7 +31,8 @@ import {
   deleteClientAvatar,
   getClientPlanVersions,
   removePlanDiscount,
-  getClientTestInstances
+  getClientTestInstances,
+  getClientFollowups
 } from '../../services/api'
 import { dayStyle, dayTooltip, outcomePreview } from '../../services/attendance/absenceModel'
 import { useAuth, roleHasAccess } from '../../context/AuthContext'
@@ -48,6 +49,7 @@ import ReactivateClientModal from './ReactivateClientModal'
 import { isInactiveOn } from '../../services/clients/inactivityPeriods'
 import RecoveryCreditsModal from './RecoveryCreditsModal'
 import ClientTests from './ClientTests'
+import ClientFollowups from './ClientFollowups'
 import { MARITAL_STATUS_OPTIONS, RESIDENCE_TYPE_OPTIONS, MEDICAL_HISTORY_CONDITIONS, DIAGNOSIS_TYPE_OPTIONS, CHARACTER_OPTIONS } from '../../services/clients/medicalConstants'
 
 const SCHEDULE_LABELS = {
@@ -131,6 +133,7 @@ export default function ClientDetail() {
   const [syncing, setSyncing] = useState(false)
   const [planHistoryOpen, setPlanHistoryOpen] = useState(false)
   const [testInstances, setTestInstances] = useState([])
+  const [followups, setFollowups] = useState([])
 
   const optionsMenuRef = useRef(null)
   const avatarInputRef = useRef(null)
@@ -154,7 +157,7 @@ export default function ClientDetail() {
     setLoading(true)
     try {
       // Advance past scheduled days and ensure future months exist (parallel with data fetching)
-      const [clientData, attendanceData, invoicesData, pricing, transportPricing, recoveryData, planVersions, testData] = await Promise.all([
+      const [clientData, attendanceData, invoicesData, pricing, transportPricing, recoveryData, planVersions, testData, followupData] = await Promise.all([
         getClientById(id),
         getClientAttendance(id),
         getClientInvoices(id),
@@ -162,7 +165,8 @@ export default function ClientDetail() {
         getTransportPricing(),
         getRecoveryCredits(id),
         getClientPlanVersions(id),
-        getClientTestInstances(id)
+        getClientTestInstances(id),
+        getClientFollowups(id)
       ])
       // Run setup functions (non-blocking, best-effort). Los clientes no facturables
       // (beneficencia / a prueba) nunca materializan facturas: skip ensureClientMonths.
@@ -180,6 +184,7 @@ export default function ClientDetail() {
       setAttendance(attendanceData)
       setInvoices(invoicesData)
       setTestInstances(testData)
+      setFollowups(followupData)
       setPricingData(pricing)
       setTransportPricingData(transportPricing)
     } catch (error) {
@@ -263,6 +268,7 @@ export default function ClientDetail() {
     { id: 'general', label: 'Información General' },
     { id: 'contact', label: 'Contacto y Dirección' },
     { id: 'medical', label: 'Información Médica' },
+    { id: 'followups', label: 'Seguimiento' },
     { id: 'tests', label: 'Tests' }
   ]
 
@@ -727,6 +733,15 @@ export default function ClientDetail() {
                 </div>
               </div>
             </div>
+          )}
+          {activeTab === 'followups' && (
+            <ClientFollowups
+              clientId={id}
+              reports={followups}
+              professional={user?.name}
+              canMutate={!client.deletedAt}
+              onRefresh={loadClientData}
+            />
           )}
           {activeTab === 'tests' && (
             <ClientTests
