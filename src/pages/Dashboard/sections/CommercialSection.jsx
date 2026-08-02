@@ -10,7 +10,7 @@ import GroupedBars from '../charts/GroupedBars'
 import { getClients } from '../../../services/clients/clientService'
 import { getPlanPricing } from '../../../services/pricing/pricingService'
 import { getBillingBreakdown } from '../../../services/dashboard/dashboardService'
-import { baseComposition, mrrTotal, flowSeries, churnKpis, bajasByReason } from '../../../services/dashboard/commercialStats'
+import { baseComposition, mrrTotal, flowSeries, churnKpis, bajasByReason, trialFunnelKpis, trialChurnByReason } from '../../../services/dashboard/commercialStats'
 import { formatCurrency } from '../../../utils/format'
 
 const DIM_OPTIONS = [
@@ -47,6 +47,8 @@ function billingMix(rows, dim) {
 
 export default function CommercialSection({ selected }) {
   const [clients, setClients] = useState([])
+  // Lista sin filtrar: el embudo de prueba necesita justamente a los no facturables.
+  const [allClients, setAllClients] = useState([])
   const [pricing, setPricing] = useState([])
   const [billing, setBilling] = useState([])
   const [loading, setLoading] = useState(true)
@@ -57,8 +59,8 @@ export default function CommercialSection({ selected }) {
     let alive = true
     Promise.all([getClients({ includeDeleted: true }), getPlanPricing()])
       // Non-billable clients (charity / trial) are excluded from all commercial metrics (MRR, altas/bajas, base).
-      .then(([cs, pr]) => { if (alive) { setClients(cs.filter(c => !c.isNonBillable)); setPricing(pr) } })
-      .catch(() => { if (alive) { setClients([]); setPricing([]) } })
+      .then(([cs, pr]) => { if (alive) { setAllClients(cs); setClients(cs.filter(c => !c.isNonBillable)); setPricing(pr) } })
+      .catch(() => { if (alive) { setAllClients([]); setClients([]); setPricing([]) } })
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
   }, [])
@@ -84,6 +86,17 @@ export default function CommercialSection({ selected }) {
     return bajasByReason(clients, from.getFullYear(), from.getMonth(), selected.year, selected.month)
       .map(r => ({ label: r.label, value: r.value, color: r.color }))
   }, [clients, selected])
+
+  // Embudo de prueba: usa allClients (los trial están excluidos del resto de métricas).
+  const trialWindow = useMemo(() => {
+    const from = new Date(selected.year, selected.month - 11, 1)
+    return [from.getFullYear(), from.getMonth(), selected.year, selected.month]
+  }, [selected])
+  const trial = useMemo(() => trialFunnelKpis(allClients, ...trialWindow), [allClients, trialWindow])
+  const trialReasons = useMemo(
+    () => trialChurnByReason(allClients, ...trialWindow).map(r => ({ label: r.label, value: r.value, color: r.color })),
+    [allClients, trialWindow]
+  )
 
   const compTotal = composition.reduce((s, r) => s + r.value, 0)
 
@@ -182,6 +195,34 @@ export default function CommercialSection({ selected }) {
           </div>
         </Card>
       </div>
+
+      {/* Período de prueba — bloque aislado: los clientes a prueba no facturan y
+          quedan fuera de todas las métricas de arriba. */}
+      <Card className="rounded-2xl border-gray-100 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
+        <div className="px-5 pt-5 pb-4">
+          <h3 className="text-[15px] font-semibold text-gray-900">Período de prueba</h3>
+          <p className="text-xs text-gray-400 mt-0.5">Cuántos prueban y se quedan · últimos 12 meses</p>
+        </div>
+        <div className="px-5 pb-5 grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+            <StatCard label="Pruebas iniciadas" value={String(trial.started)} sub="clientes a prueba" />
+            <StatCard label="Se quedaron" value={String(trial.converted)} valueClass="text-emerald-700" sub="pasaron a cliente" />
+            <StatCard label="No se quedaron" value={String(trial.churned)} valueClass="text-rose-600" sub="baja durante la prueba" />
+            <StatCard
+              label="Conversión"
+              value={trial.conversionRate == null ? '—' : `${trial.conversionRate.toFixed(0)}%`}
+              valueClass={trial.conversionRate == null ? 'text-gray-400' : trial.conversionRate >= 60 ? 'text-emerald-700' : 'text-amber-600'}
+              sub={trial.resolved > 0 ? `sobre ${trial.resolved} pruebas cerradas` : 'sin pruebas cerradas aún'}
+            />
+          </div>
+          <div>
+            <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide mb-2">Por qué no se quedaron</p>
+            {trialReasons.length === 0
+              ? <p className="text-sm text-gray-400 py-6 text-center">Sin bajas en período de prueba.</p>
+              : <BreakdownBars rows={trialReasons} showPct />}
+          </div>
+        </div>
+      </Card>
     </div>
   )
 }

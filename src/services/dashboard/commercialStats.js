@@ -214,15 +214,21 @@ function meanTenureMonths(clients, now = new Date()) {
 
 // Deactivations grouped by reason within an inclusive (year, month) range.
 export function bajasByReason(clients, fromYear, fromMonth, toYear, toMonth) {
-  const fromTotal = fromYear * 12 + fromMonth
-  const toTotal = toYear * 12 + toMonth
+  return groupByReason(
+    (clients || []).filter(c => inRange(c.deactivationDate, fromYear, fromMonth, toYear, toMonth))
+  )
+}
 
+function inRange(dateStr, fromYear, fromMonth, toYear, toMonth) {
+  const ym = parseYearMonth(dateStr)
+  if (!ym) return false
+  const t = ym.year * 12 + ym.month
+  return t >= fromYear * 12 + fromMonth && t <= toYear * 12 + toMonth
+}
+
+function groupByReason(clients) {
   const counts = new Map()
-  for (const c of (clients || [])) {
-    const deact = parseYearMonth(c.deactivationDate)
-    if (!deact) continue
-    const t = deact.year * 12 + deact.month
-    if (t < fromTotal || t > toTotal) continue
+  for (const c of clients) {
     const reason = c.deactivationReason || 'other'
     counts.set(reason, (counts.get(reason) || 0) + 1)
   }
@@ -240,4 +246,45 @@ export function bajasByReason(clients, fromYear, fromMonth, toYear, toMonth) {
       value,
       color: CATEGORICAL_PALETTE[orderIndex(reason) % CATEGORICAL_PALETTE.length]
     }))
+}
+
+// ── Embudo de período de prueba ──────────────────────────────────────────────
+// Un cliente "no se quedó tras la prueba" si estuvo a prueba y nunca se convirtió,
+// o se convirtió después de la fecha de baja (p. ej. un reintegro posterior).
+// La misma regla vive en get_churn_board (was_trial) — mantenerlas en sync.
+export function churnedDuringTrial(client) {
+  if (!client?.trialStartedAt) return false
+  if (!client.deactivationDate) return false
+  if (!client.trialConvertedAt) return true
+  return client.trialConvertedAt > client.deactivationDate
+}
+
+// Se quedó: dejó de estar a prueba estando activo (o antes de darse de baja).
+export function convertedFromTrial(client) {
+  if (!client?.trialStartedAt || !client.trialConvertedAt) return false
+  return !client.deactivationDate || client.trialConvertedAt <= client.deactivationDate
+}
+
+// KPIs del embudo en un rango inclusivo de (year, month).
+// El % de conversión se mide sobre pruebas ya resueltas (se quedaron + no se
+// quedaron); las que siguen abiertas no cuentan para no deprimir el número.
+export function trialFunnelKpis(clients, fromYear, fromMonth, toYear, toMonth) {
+  const list = clients || []
+  const started = list.filter(c => inRange(c.trialStartedAt, fromYear, fromMonth, toYear, toMonth)).length
+  const converted = list.filter(c => convertedFromTrial(c) && inRange(c.trialConvertedAt, fromYear, fromMonth, toYear, toMonth)).length
+  const churned = list.filter(c => churnedDuringTrial(c) && inRange(c.deactivationDate, fromYear, fromMonth, toYear, toMonth)).length
+
+  const resolved = converted + churned
+  const conversionRate = resolved > 0 ? (converted / resolved) * 100 : null
+
+  return { started, converted, churned, resolved, conversionRate }
+}
+
+// Bajas ocurridas en período de prueba, agrupadas por motivo.
+export function trialChurnByReason(clients, fromYear, fromMonth, toYear, toMonth) {
+  return groupByReason(
+    (clients || []).filter(c =>
+      churnedDuringTrial(c) && inRange(c.deactivationDate, fromYear, fromMonth, toYear, toMonth)
+    )
+  )
 }

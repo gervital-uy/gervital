@@ -31,6 +31,7 @@ export default function ChurnBoard() {
   const [managerOpen, setManagerOpen] = useState(false)
   const [daysFilterEnabled, setDaysFilterEnabled] = useState(false)
   const [maxDaysValue, setMaxDaysValue] = useState('30')
+  const [onlyTrial, setOnlyTrial] = useState(false)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
@@ -65,19 +66,27 @@ export default function ChurnBoard() {
     loadReasons()
   }, [loadBoard, loadReasons])
 
-  // Group cards by stage for rendering, hiding churns older than the selected threshold.
+  // Bajas dentro del umbral de antigüedad elegido.
+  const recentCards = useMemo(() => {
+    const maxDays = daysFilterEnabled && maxDaysValue ? Number(maxDaysValue) : null
+    return cards.filter(c => maxDays == null || c.daysSince == null || c.daysSince <= maxDays)
+  }, [cards, daysFilterEnabled, maxDaysValue])
+
+  // Se cuenta sobre recentCards, no sobre cards: el contador del botón tiene que
+  // coincidir con lo que se ve al activarlo.
+  const trialCount = useMemo(() => recentCards.filter(c => c.wasTrial).length, [recentCards])
+
   const cardsByStage = useMemo(() => {
     const map = {}
     STAGES.forEach(s => { map[s.key] = [] })
-    const maxDays = daysFilterEnabled && maxDaysValue ? Number(maxDaysValue) : null
-    cards
-      .filter(c => maxDays == null || c.daysSince == null || c.daysSince <= maxDays)
+    recentCards
+      .filter(c => !onlyTrial || c.wasTrial)
       .forEach(c => {
         if (map[c.stage]) map[c.stage].push(c)
         else map.new.push(c)
       })
     return map
-  }, [cards, daysFilterEnabled, maxDaysValue])
+  }, [recentCards, onlyTrial])
 
   function handleDragStart({ active }) {
     const data = active.data.current
@@ -124,6 +133,24 @@ export default function ChurnBoard() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {trialCount > 0 && (
+            <button
+              type="button"
+              aria-pressed={onlyTrial}
+              onClick={() => setOnlyTrial(v => !v)}
+              title="Bajas de clientes que no se quedaron después del período de prueba"
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-lg transition-colors ${
+                onlyTrial
+                  ? 'bg-orange-50 border-orange-300 text-orange-700 font-medium'
+                  : 'bg-white border-gray-300 text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Solo bajas en prueba
+              <span className={`px-1.5 rounded text-[11px] font-semibold ${onlyTrial ? 'bg-orange-200 text-orange-800' : 'bg-gray-100 text-gray-500'}`}>
+                {trialCount}
+              </span>
+            </button>
+          )}
           <div className="inline-flex items-center gap-2 px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-lg">
             <button
               type="button"

@@ -16,6 +16,7 @@ export async function getChurnBoard() {
     cognitiveLevel: r.cognitive_level,
     frequency: r.frequency,
     schedule: r.schedule,
+    assignedDays: r.assigned_days || [],
     stage: r.stage,
     reason: r.reason,
     deactivationNotes: r.deactivation_notes,
@@ -26,6 +27,8 @@ export async function getChurnBoard() {
     daysSince: r.days_since,
     noteCount: Number(r.note_count) || 0,
     isCurrentlyInactive: !!r.is_currently_inactive,
+    // Baja en período de prueba: estuvo a prueba y nunca se convirtió.
+    wasTrial: !!r.was_trial,
     updatedAt: r.updated_at
   }))
 }

@@ -10,6 +10,7 @@ import Modal from '../../components/ui/Modal'
 import Button from '../../components/ui/Button'
 import ReactivateClientModal from '../Clients/ReactivateClientModal'
 import { STAGE_LABEL, planSubtitle } from './churnConstants'
+import TrialBadge from './TrialBadge'
 
 // A single labeled field in the details grid.
 function Field({ label, value, valueClass = 'text-gray-900' }) {
@@ -204,9 +205,14 @@ export default function ChurnCardModal({ card, isOpen, onClose, onReactivated, o
       size="lg"
     >
       <div className="space-y-5">
-        {/* Plan subtitle */}
-        {planSubtitle(card) && (
-          <p className="text-sm text-gray-500 -mt-1">{planSubtitle(card)}</p>
+        {/* Plan subtitle + marca de baja en período de prueba */}
+        {(planSubtitle(card, { withDays: true }) || card.wasTrial) && (
+          <div className="flex flex-wrap items-center gap-2 -mt-1">
+            {planSubtitle(card, { withDays: true }) && (
+              <p className="text-sm text-gray-500">{planSubtitle(card, { withDays: true })}</p>
+            )}
+            {card.wasTrial && <TrialBadge />}
+          </div>
         )}
 
         {/* Motivo de baja: motivo discreto + su nota, editables. Separado de las

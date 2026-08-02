@@ -2,6 +2,7 @@ import { useDraggable } from '@dnd-kit/core'
 import { formatCurrency } from '../../utils/format'
 import { useAuth } from '../../context/AuthContext'
 import { TIER_HEX, planSubtitle } from './churnConstants'
+import TrialBadge from './TrialBadge'
 
 // Small colored badge for the deactivation reason. `info` is the resolved
 // reason from `reasonsByKey`; falls back to the raw key when unresolved.
@@ -63,9 +64,10 @@ export default function ChurnCard({ card, onClick, overlay = false, reasonsByKey
         </div>
       </div>
 
-      {/* Reason badge */}
-      <div className="mb-2.5">
+      {/* Reason badge (+ "A prueba" si la baja fue durante el período de prueba) */}
+      <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
         <ReasonBadge info={reasonsByKey[card.reason]} reasonKey={card.reason} />
+        {card.wasTrial && <TrialBadge />}
       </div>
 
       {/* Footer: days since + MRR lost (montos solo para roles con billing) */}

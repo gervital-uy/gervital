@@ -6,7 +6,11 @@ import {
   mrrTotal,
   flowSeries,
   churnKpis,
-  bajasByReason
+  bajasByReason,
+  churnedDuringTrial,
+  convertedFromTrial,
+  trialFunnelKpis,
+  trialChurnByReason
 } from './commercialStats'
 
 const client = (over = {}) => ({
@@ -171,5 +175,110 @@ describe('transportClientsInMonth', () => {
   test('excluye a los que no tienen transporte', () => {
     const soloSinTransporte = [{ startDate: '2026-01-01', plan: { hasTransport: false } }]
     expect(transportClientsInMonth(soloSinTransporte, 2026, 5)).toBe(0)
+  })
+})
+
+describe('embudo de período de prueba', () => {
+  const trial = (over = {}) => client({ trialStartedAt: null, trialConvertedAt: null, ...over })
+
+  describe('churnedDuringTrial', () => {
+    test('estuvo a prueba, nunca se convirtió y se dio de baja → true', () => {
+      expect(churnedDuringTrial(trial({ trialStartedAt: '2026-03-01', deactivationDate: '2026-03-20' }))).toBe(true)
+    })
+    test('se convirtió antes de la baja → false (se quedó, se fue después como regular)', () => {
+      expect(churnedDuringTrial(trial({
+        trialStartedAt: '2026-03-01', trialConvertedAt: '2026-03-15', deactivationDate: '2026-08-10'
+      }))).toBe(false)
+    })
+    test('se convirtió después de la baja (reintegro posterior) → true', () => {
+      expect(churnedDuringTrial(trial({
+        trialStartedAt: '2026-03-01', trialConvertedAt: '2026-06-01', deactivationDate: '2026-03-20'
+      }))).toBe(true)
+    })
+    test('sigue a prueba sin baja → false', () => {
+      expect(churnedDuringTrial(trial({ trialStartedAt: '2026-03-01' }))).toBe(false)
+    })
+    test('nunca estuvo a prueba → false', () => {
+      expect(churnedDuringTrial(trial({ deactivationDate: '2026-03-20' }))).toBe(false)
+    })
+  })
+
+  describe('convertedFromTrial', () => {
+    test('se convirtió y sigue activo → true', () => {
+      expect(convertedFromTrial(trial({ trialStartedAt: '2026-03-01', trialConvertedAt: '2026-03-15' }))).toBe(true)
+    })
+    test('se convirtió y después se dio de baja → true', () => {
+      expect(convertedFromTrial(trial({
+        trialStartedAt: '2026-03-01', trialConvertedAt: '2026-03-15', deactivationDate: '2026-08-10'
+      }))).toBe(true)
+    })
+    test('se convirtió después de la baja → false', () => {
+      expect(convertedFromTrial(trial({
+        trialStartedAt: '2026-03-01', trialConvertedAt: '2026-06-01', deactivationDate: '2026-03-20'
+      }))).toBe(false)
+    })
+    test('nunca se convirtió → false', () => {
+      expect(convertedFromTrial(trial({ trialStartedAt: '2026-03-01' }))).toBe(false)
+    })
+  })
+
+  describe('trialFunnelKpis', () => {
+    const clients = [
+      trial({ trialStartedAt: '2026-03-02', trialConvertedAt: '2026-03-20' }),                             // se quedó
+      trial({ trialStartedAt: '2026-03-05', trialConvertedAt: '2026-04-01' }),                             // se quedó (abril)
+      trial({ trialStartedAt: '2026-03-08', deactivationDate: '2026-03-25' }),                             // no se quedó
+      trial({ trialStartedAt: '2026-03-10' }),                                                             // prueba abierta
+      trial({ startDate: '2026-01-01', deactivationDate: '2026-03-15' })                                   // baja normal, nunca a prueba
+    ]
+
+    test('cuenta iniciadas, convertidas y bajas en prueba dentro del rango', () => {
+      const k = trialFunnelKpis(clients, 2026, 2, 2026, 2) // solo marzo
+      expect(k.started).toBe(4)
+      expect(k.converted).toBe(1)  // la de abril queda fuera del rango
+      expect(k.churned).toBe(1)
+      expect(k.resolved).toBe(2)
+      expect(k.conversionRate).toBe(50)
+    })
+
+    test('rango más amplio incluye la conversión de abril', () => {
+      const k = trialFunnelKpis(clients, 2026, 2, 2026, 3) // marzo-abril
+      expect(k.converted).toBe(2)
+      expect(k.churned).toBe(1)
+      expect(k.conversionRate).toBeCloseTo(66.67, 1)
+    })
+
+    test('sin pruebas resueltas la tasa es null, no 0', () => {
+      const k = trialFunnelKpis([trial({ trialStartedAt: '2026-03-10' })], 2026, 2, 2026, 2)
+      expect(k.started).toBe(1)
+      expect(k.resolved).toBe(0)
+      expect(k.conversionRate).toBeNull()
+    })
+
+    test('lista vacía no rompe', () => {
+      expect(trialFunnelKpis([], 2026, 2, 2026, 2)).toEqual({
+        started: 0, converted: 0, churned: 0, resolved: 0, conversionRate: null
+      })
+    })
+  })
+
+  describe('trialChurnByReason', () => {
+    const clients = [
+      trial({ trialStartedAt: '2026-03-01', deactivationDate: '2026-03-20', deactivationReason: 'financial' }),
+      trial({ trialStartedAt: '2026-03-02', deactivationDate: '2026-03-22', deactivationReason: 'financial' }),
+      trial({ trialStartedAt: '2026-03-03', deactivationDate: '2026-03-25', deactivationReason: 'adaptation_motivation' }),
+      trial({ startDate: '2026-01-01', deactivationDate: '2026-03-18', deactivationReason: 'financial' })  // no era prueba
+    ]
+
+    test('agrupa solo las bajas en prueba', () => {
+      const rows = trialChurnByReason(clients, 2026, 2, 2026, 2)
+      expect(rows.map(r => [r.reason, r.value])).toEqual([
+        ['adaptation_motivation', 1],
+        ['financial', 2]
+      ])
+    })
+
+    test('fuera del rango no cuenta', () => {
+      expect(trialChurnByReason(clients, 2026, 0, 2026, 1)).toEqual([])
+    })
   })
 })
