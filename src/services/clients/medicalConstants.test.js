@@ -10,6 +10,13 @@ test('every option has value and label', () => {
   })
 })
 
+// Debe coincidir con el CHECK client_diagnoses_diagnosis_type_check (migración 073)
+test('diagnosis types match the DB check constraint', () => {
+  expect(DIAGNOSIS_TYPE_OPTIONS.map(o => o.value)).toEqual([
+    'sin', 'declive_cognitivo', 'deterioro_cognitivo', 'demencia', 'parkinson'
+  ])
+})
+
 test('medical history has the 17 canonical conditions', () => {
   expect(MEDICAL_HISTORY_CONDITIONS.map(c => c.value)).toEqual([
     'diabetes','celiaquia','hipertension','intolerancia_lactosa','dislipidemia',
