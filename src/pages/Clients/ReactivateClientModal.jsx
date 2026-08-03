@@ -12,6 +12,13 @@ const todayStr = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// "4 de agosto de 2026" a partir de un YYYY-MM-DD, sin corrimiento de timezone.
+const fmtLongDate = (dateStr) => {
+  if (!dateStr) return ''
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString('es-UY', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
 // Día siguiente a un YYYY-MM-DD (mínimo permitido: el reintegro va después de la baja)
 const nextDayStr = (dateStr) => {
   if (!dateStr) return undefined
@@ -31,8 +38,12 @@ const planAtDate = (versions, dateStr) => {
 
 export default function ReactivateClientModal({ isOpen, onClose, client, onConfirm, loading }) {
   const bajaDate = client?.deactivationDate || null
+  // Si ya hay un reintegro programado a futuro, el modal pasa a modo edición: se
+  // precarga esa fecha y confirmar la reprograma en vez de crear una nueva.
+  const scheduledDate = client?.scheduledReactivationDate || null
+  const isEditing = !!scheduledDate
 
-  const [reactivationDate, setReactivationDate] = useState(todayStr())
+  const [reactivationDate, setReactivationDate] = useState(scheduledDate || todayStr())
   const [frequency, setFrequency] = useState('1')
   const [schedule, setSchedule] = useState('morning')
   const [assignedDays, setAssignedDays] = useState([])
@@ -42,11 +53,13 @@ export default function ReactivateClientModal({ isOpen, onClose, client, onConfi
 
   useEffect(() => {
     if (!isOpen || !client?.id) return
-    setReactivationDate(todayStr())
+    setReactivationDate(scheduledDate || todayStr())
     setLoadingPlan(true)
     getClientPlanVersions(client.id)
       .then(versions => {
-        const plan = planAtDate(versions, bajaDate)
+        // Editando: el plan relevante es el que rige en la fecha ya programada (el
+        // que se eligió al programar), no el previo a la baja.
+        const plan = planAtDate(versions, scheduledDate || bajaDate)
         if (plan) {
           setFrequency(String(plan.frequency))
           setSchedule(plan.schedule)
@@ -57,7 +70,7 @@ export default function ReactivateClientModal({ isOpen, onClose, client, onConfi
       })
       .catch(() => {})
       .finally(() => setLoadingPlan(false))
-  }, [isOpen, client?.id, bajaDate])
+  }, [isOpen, client?.id, bajaDate, scheduledDate])
 
   const toggleDay = (day) => {
     setAssignedDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day])
@@ -87,7 +100,7 @@ export default function ReactivateClientModal({ isOpen, onClose, client, onConfi
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Reintegrar cliente">
+    <Modal isOpen={isOpen} onClose={onClose} title={isEditing ? 'Editar reintegro programado' : 'Reintegrar cliente'}>
       <div className="flex items-start gap-3 mb-4">
         <div className="p-2 bg-emerald-100 rounded-full shrink-0">
           <RefreshDouble className="w-5 h-5 text-emerald-600" />
@@ -97,10 +110,22 @@ export default function ReactivateClientModal({ isOpen, onClose, client, onConfi
             {client?.firstName} {client?.lastName}
           </p>
           <p className="text-sm text-gray-500">
-            Elegí la fecha de reintegro y confirmá el plan con el que vuelve.
+            {isEditing
+              ? 'Ya hay un reintegro programado. Cambiá la fecha o el plan con el que vuelve.'
+              : 'Elegí la fecha de reintegro y confirmá el plan con el que vuelve.'}
           </p>
         </div>
       </div>
+
+      {isEditing && (
+        <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
+          <p className="text-[12.5px] text-blue-800">
+            Reintegro programado para el{' '}
+            <strong>{fmtLongDate(scheduledDate)}</strong>. El cliente sigue de baja hasta esa fecha,
+            y vuelve a estar activo solo. Si querés que vuelva antes, elegí una fecha de hoy o anterior.
+          </p>
+        </div>
+      )}
 
       <label className="block text-sm font-medium text-gray-700 mb-1">Fecha de reintegro</label>
       <input
@@ -190,7 +215,7 @@ export default function ReactivateClientModal({ isOpen, onClose, client, onConfi
           loading={loading}
           disabled={!canConfirm}
         >
-          Confirmar reintegro
+          {isEditing ? 'Guardar cambios' : 'Confirmar reintegro'}
         </Button>
       </div>
     </Modal>

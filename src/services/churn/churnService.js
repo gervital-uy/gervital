@@ -29,6 +29,8 @@ export async function getChurnBoard() {
     isCurrentlyInactive: !!r.is_currently_inactive,
     // Baja en período de prueba: estuvo a prueba y nunca se convirtió.
     wasTrial: !!r.was_trial,
+    // Reintegro ya programado a futuro (el cliente sigue de baja hasta esa fecha).
+    scheduledReactivationDate: r.scheduled_reactivation_date || null,
     updatedAt: r.updated_at
   }))
 }

@@ -408,15 +408,26 @@ export default function ChurnCardModal({ card, isOpen, onClose, onReactivated, o
           </div>
         </div>
 
-        {/* Reactivate */}
-        <div className="flex justify-end pt-3 border-t border-gray-100">
-          <Button
-            variant="success"
-            onClick={() => setReactivateModal(true)}
-            loading={reactivating}
-          >
-            Reintegrar cliente
-          </Button>
+        {/* Reintegro. Si ya hay uno programado a futuro el cliente sigue de baja
+            hasta esa fecha, así que el botón pasa a editar esa programación. */}
+        <div className="pt-3 border-t border-gray-100">
+          {card.scheduledReactivationDate && (
+            <div className="mb-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
+              <p className="text-[12.5px] text-blue-800">
+                Reintegro programado para el <strong>{fmtDate(card.scheduledReactivationDate)}</strong>.
+                Vuelve a estar activo solo cuando llegue esa fecha.
+              </p>
+            </div>
+          )}
+          <div className="flex justify-end">
+            <Button
+              variant="success"
+              onClick={() => setReactivateModal(true)}
+              loading={reactivating}
+            >
+              {card.scheduledReactivationDate ? 'Editar reintegro' : 'Reintegrar cliente'}
+            </Button>
+          </div>
         </div>
       </div>
       </Modal>
@@ -424,7 +435,13 @@ export default function ChurnCardModal({ card, isOpen, onClose, onReactivated, o
       <ReactivateClientModal
         isOpen={reactivateModal}
         onClose={() => setReactivateModal(false)}
-        client={{ id: clientId, firstName: card.firstName, lastName: card.lastName, deactivationDate: card.deactivationDate }}
+        client={{
+          id: clientId,
+          firstName: card.firstName,
+          lastName: card.lastName,
+          deactivationDate: card.deactivationDate,
+          scheduledReactivationDate: card.scheduledReactivationDate
+        }}
         onConfirm={handleReactivate}
         loading={reactivating}
       />
