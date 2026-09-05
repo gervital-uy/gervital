@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { format, addDays, subDays, isWeekend, nextMonday, previousFriday, startOfWeek } from 'date-fns'
+import { format, addDays, subDays, isWeekend, nextMonday, previousFriday } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { NavArrowLeft, NavArrowRight, Refresh, Check, Calendar } from 'iconoir-react'
 import {
@@ -13,7 +13,7 @@ import {
   buildDefaultFleet
 } from '../../services/transport/transportService'
 import { SHIFTS, DAY_NAMES, DAY_LABELS_ES } from '../../services/transport/transportConstants'
-import { getAttendanceForDate, getAttendanceForDateRange } from '../../services/api'
+import { getAttendanceForDate } from '../../services/api'
 import { classifyDay, indexAttendanceByClientId, RECOVERY_STATUS } from '../../services/attendance/dayRoster'
 import TransportMap from './TransportMap'
 import CarAssignmentPanel from './CarAssignmentPanel'
@@ -55,7 +55,6 @@ export default function TransportScheduler() {
   const [saving, setSaving] = useState(false)
   const [allClients, setAllClients] = useState([])
   const [attendanceByClientId, setAttendanceByClientId] = useState(new Map())
-  const [weekAttendanceByDate, setWeekAttendanceByDate] = useState(new Map())
   const [lastWeekdayAvailable, setLastWeekdayAvailable] = useState(false)
   const [showRepeatConfirm, setShowRepeatConfirm] = useState(false)
   const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(null)
@@ -75,13 +74,6 @@ export default function TransportScheduler() {
   const dateStr = getDateStr(currentDate)
   const dayName = DAY_NAMES[currentDate.getDay()]
   const dayLabelEs = DAY_LABELS_ES[dayName] || dayName
-
-  // Mon–Fri dates of the current week (for the weekly review)
-  const weekDates = useMemo(() => {
-    const monday = startOfWeek(currentDate, { weekStartsOn: 1 })
-    const keys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
-    return keys.reduce((acc, k, i) => ({ ...acc, [k]: getDateStr(addDays(monday, i)) }), {})
-  }, [currentDate])
 
   const clientsById = useMemo(() => {
     const map = new Map()
@@ -194,27 +186,6 @@ export default function TransportScheduler() {
   useEffect(() => {
     loadDay(currentDate)
   }, [currentDate, loadDay])
-
-  // Load the week's attendance when the weekly review is open (indexed by date → clientId)
-  useEffect(() => {
-    if (!showWeek) return
-    let cancelled = false
-    getAttendanceForDateRange(weekDates.monday, weekDates.friday)
-      .then(records => {
-        if (cancelled) return
-        const byDate = new Map()
-        for (const r of records) {
-          if (!byDate.has(r.date)) byDate.set(r.date, new Map())
-          byDate.get(r.date).set(r.clientId, r)
-        }
-        setWeekAttendanceByDate(byDate)
-      })
-      .catch(err => {
-        console.error('Error loading week attendance:', err)
-        if (!cancelled) setWeekAttendanceByDate(new Map())
-      })
-    return () => { cancelled = true }
-  }, [showWeek, weekDates])
 
   // ── Navigation ────────────────────────────────────────────────────────────
 
@@ -487,8 +458,6 @@ export default function TransportScheduler() {
         isOpen={showWeek}
         onClose={() => setShowWeek(false)}
         clients={allClients}
-        weekDates={weekDates}
-        attendanceByDate={weekAttendanceByDate}
       />
 
       {/* Save with unassigned warning */}

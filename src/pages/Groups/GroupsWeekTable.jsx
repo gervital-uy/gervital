@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Search, Xmark, Truck, RefreshDouble } from 'iconoir-react'
-import { classifyDay, isRecoveryAttendee } from '../../services/attendance/dayRoster'
+import { Search, Xmark, Truck } from 'iconoir-react'
+import { buildPlannedRoster } from '../../services/attendance/dayRoster'
 import './GroupsWeekTable.css'
 
 const TIER_HEX = { A: '#34d399', B: '#38bdf8', C: '#fbbf24', D: '#fb7185' }
@@ -24,16 +24,15 @@ const sortRoster = (a, b) =>
   `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`)
 
 // Same rule as shiftClients in DailyGroups — full_day clients match both shifts.
-// Plan-based: absences are NOT reflected here (reflectAbsences: false), only recoveries add.
-function presentForDayShift(clients, dayKey, shift, attendanceByClientId) {
+// Strictly plan-based: faltas y recuperos no alteran esta vista (ver buildPlannedRoster).
+function plannedForDayShift(clients, dayKey, shift) {
   const matchesShift = c => shift === 'morning'
     ? (c.plan?.schedule === 'morning' || c.plan?.schedule === 'full_day')
     : (c.plan?.schedule === 'afternoon' || c.plan?.schedule === 'full_day')
-  const { present } = classifyDay({ clients, dayName: dayKey, matchesShift, attendanceByClientId, reflectAbsences: false })
-  return present.sort(sortRoster)
+  return buildPlannedRoster({ clients, dayName: dayKey, matchesShift }).sort(sortRoster)
 }
 
-function Cell({ present, attMap }) {
+function Cell({ present }) {
   if (present.length === 0) return <div className="gwk-empty">—</div>
 
   return (
@@ -45,7 +44,6 @@ function Cell({ present, attMap }) {
         <div key={c.id} className="gwk-chip">
           <span className="gwk-dot" style={{ background: TIER_HEX[c.cognitiveLevel] || '#cbd5e1' }} />
           <span className="gwk-name">{c.firstName} {c.lastName}</span>
-          {isRecoveryAttendee(c, attMap) && <RefreshDouble className="gwk-recovery" title="Día de recupero" />}
           {c.plan?.hasTransport && <Truck className="gwk-truck" title="Con transporte" />}
         </div>
       ))}
@@ -56,7 +54,7 @@ function Cell({ present, attMap }) {
 const normalize = (str) =>
   (str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 
-export default function GroupsWeekTable({ isOpen, onClose, clients, weekDates, attendanceByDate }) {
+export default function GroupsWeekTable({ isOpen, onClose, clients }) {
   const [search, setSearch] = useState('')
 
   useEffect(() => {
@@ -78,15 +76,12 @@ export default function GroupsWeekTable({ isOpen, onClose, clients, weekDates, a
     ? clients.filter(c => normalize(`${c.firstName} ${c.lastName}`).includes(query))
     : clients
 
-  // Attendance map (clientId → record) for a given weekday, if this week's data is loaded
-  const attFor = (dayKey) => attendanceByDate?.get(weekDates?.[dayKey])
-
   // Unique attendees per day (full_day shows in both shifts, count once) + transport count
   const dayStats = {}
   WEEK_DAYS.forEach(d => {
     const ids = new Set()
     let transport = 0
-    SHIFT_ROWS.forEach(s => presentForDayShift(visibleClients, d.key, s.key, attFor(d.key)).forEach(c => {
+    SHIFT_ROWS.forEach(s => plannedForDayShift(visibleClients, d.key, s.key).forEach(c => {
       if (!ids.has(c.id)) {
         ids.add(c.id)
         if (c.plan?.hasTransport) transport += 1
@@ -103,7 +98,7 @@ export default function GroupsWeekTable({ isOpen, onClose, clients, weekDates, a
           <div>
             <h3 className="gwk-title">Vista semanal de grupos</h3>
             <p className="gwk-subtitle">
-              Asistentes por día y horario · día completo aparece en mañana y tarde · 🚚 = con transporte
+              Cupos según el plan · no refleja faltas ni recuperos · día completo aparece en mañana y tarde · 🚚 = con transporte
             </p>
           </div>
           <div className="gwk-header-actions">
@@ -162,10 +157,7 @@ export default function GroupsWeekTable({ isOpen, onClose, clients, weekDates, a
                   </th>
                   {WEEK_DAYS.map(d => (
                     <td key={d.key} className="gwk-cell">
-                      <Cell
-                        present={presentForDayShift(visibleClients, d.key, s.key, attFor(d.key))}
-                        attMap={attFor(d.key)}
-                      />
+                      <Cell present={plannedForDayShift(visibleClients, d.key, s.key)} />
                     </td>
                   ))}
                 </tr>

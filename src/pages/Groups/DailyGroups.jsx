@@ -6,10 +6,10 @@ import {
   useSensor,
   useSensors
 } from '@dnd-kit/core'
-import { format, addDays, subDays, isToday, differenceInCalendarDays, startOfDay, startOfWeek } from 'date-fns'
+import { format, addDays, subDays, isToday, differenceInCalendarDays, startOfDay } from 'date-fns'
 import { es } from 'date-fns/locale/es'
 import { NavArrowLeft, NavArrowRight, Calendar } from 'iconoir-react'
-import { getClients, getAttendanceForDate, getAttendanceForDateRange } from '../../services/api'
+import { getClients, getAttendanceForDate } from '../../services/api'
 import { classifyDay, buildDayRoster, indexAttendanceByClientId, stripClientsFromSlots, RECOVERY_STATUS } from '../../services/attendance/dayRoster'
 import {
   getTimeSlotsForDate,
@@ -57,7 +57,6 @@ export default function DailyGroups() {
   const [loading, setLoading] = useState(true)
   const [allClients, setAllClients] = useState([])
   const [attendanceByClientId, setAttendanceByClientId] = useState(new Map())
-  const [weekAttendanceByDate, setWeekAttendanceByDate] = useState(new Map())
   const [timeSlots, setTimeSlots] = useState([])
   const [showTemplateModal, setShowTemplateModal] = useState(false)
   const [showWeek, setShowWeek] = useState(false)
@@ -77,13 +76,6 @@ export default function DailyGroups() {
   const dateStr = dateToStr(selectedDate)
   const dayName = DAY_NAMES[selectedDate.getDay()]
   const isWeekend = dayName === 'saturday' || dayName === 'sunday'
-
-  // Mon–Fri dates of the selected date's week (for the weekly review)
-  const weekDates = useMemo(() => {
-    const monday = startOfWeek(selectedDate, { weekStartsOn: 1 })
-    const keys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
-    return keys.reduce((acc, k, i) => ({ ...acc, [k]: dateToStr(addDays(monday, i)) }), {})
-  }, [selectedDate])
 
   // ── Derived data ──────────────────────────────────────────────────────────
 
@@ -249,27 +241,6 @@ export default function DailyGroups() {
       })
     return () => { cancelled = true }
   }, [dateStr])
-
-  // Load the week's attendance when the weekly review is open (indexed by date → clientId)
-  useEffect(() => {
-    if (!showWeek) return
-    let cancelled = false
-    getAttendanceForDateRange(weekDates.monday, weekDates.friday)
-      .then(records => {
-        if (cancelled) return
-        const byDate = new Map()
-        for (const r of records) {
-          if (!byDate.has(r.date)) byDate.set(r.date, new Map())
-          byDate.get(r.date).set(r.clientId, r)
-        }
-        setWeekAttendanceByDate(byDate)
-      })
-      .catch(err => {
-        console.error('Error loading week attendance:', err)
-        if (!cancelled) setWeekAttendanceByDate(new Map())
-      })
-    return () => { cancelled = true }
-  }, [showWeek, weekDates])
 
   // Load slots when date or shift changes
   useEffect(() => {
@@ -707,8 +678,6 @@ export default function DailyGroups() {
         isOpen={showWeek}
         onClose={() => setShowWeek(false)}
         clients={allClients}
-        weekDates={weekDates}
-        attendanceByDate={weekAttendanceByDate}
       />
     </div>
   )

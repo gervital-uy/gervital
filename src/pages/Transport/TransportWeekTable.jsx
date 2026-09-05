@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Search, Xmark, RefreshDouble } from 'iconoir-react'
+import { Search, Xmark } from 'iconoir-react'
 import { SHIFTS } from '../../services/transport/transportConstants'
 import { shiftMatchesSchedule } from '../../services/transport/transportService'
-import { classifyDay, isRecoveryAttendee } from '../../services/attendance/dayRoster'
+import { buildPlannedRoster } from '../../services/attendance/dayRoster'
 import './TransportWeekTable.css'
 
 const TIER_HEX = { A: '#34d399', B: '#38bdf8', C: '#fbbf24', D: '#fb7185' }
@@ -16,13 +16,13 @@ const WEEK_DAYS = [
   { key: 'friday', label: 'Viernes' }
 ]
 
-// Plan-based: absences are NOT reflected here (reflectAbsences: false), only recoveries add.
-function presentForDayShift(clients, shiftId, dayKey, attMap) {
+// Strictly plan-based: faltas y recuperos no alteran esta vista (ver buildPlannedRoster).
+function plannedForDayShift(clients, shiftId, dayKey) {
   const matchesShift = c => shiftMatchesSchedule(shiftId, c.plan?.schedule)
-  return classifyDay({ clients, dayName: dayKey, matchesShift, attendanceByClientId: attMap, reflectAbsences: false }).present
+  return buildPlannedRoster({ clients, dayName: dayKey, matchesShift })
 }
 
-function Cell({ present, attMap }) {
+function Cell({ present }) {
   if (present.length === 0) return <div className="wk-empty">—</div>
 
   const cars = Math.ceil(present.length / SEAT_CAP)
@@ -38,7 +38,6 @@ function Cell({ present, attMap }) {
           <div className="wk-chip">
             <span className="wk-dot" style={{ background: TIER_HEX[c.cognitiveLevel] || '#cbd5e1' }} />
             <span className="wk-name">{c.firstName} {c.lastName}</span>
-            {isRecoveryAttendee(c, attMap) && <RefreshDouble className="wk-recovery" title="Día de recupero" />}
           </div>
         </Fragment>
       ))}
@@ -49,7 +48,7 @@ function Cell({ present, attMap }) {
 const normalize = (str) =>
   (str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 
-export default function TransportWeekTable({ isOpen, onClose, clients, weekDates, attendanceByDate }) {
+export default function TransportWeekTable({ isOpen, onClose, clients }) {
   const [search, setSearch] = useState('')
 
   useEffect(() => {
@@ -71,14 +70,11 @@ export default function TransportWeekTable({ isOpen, onClose, clients, weekDates
     ? clients.filter(c => normalize(`${c.firstName} ${c.lastName}`).includes(query))
     : clients
 
-  // Attendance map (clientId → record) for a given weekday, if this week's data is loaded
-  const attFor = (dayKey) => attendanceByDate?.get(weekDates?.[dayKey])
-
   // Unique attendees per day (a person shows up in two shifts, count once)
   const dayUnique = {}
   WEEK_DAYS.forEach(d => {
     const ids = new Set()
-    SHIFTS.forEach(s => presentForDayShift(visibleClients, s.id, d.key, attFor(d.key)).forEach(c => ids.add(c.id)))
+    SHIFTS.forEach(s => plannedForDayShift(visibleClients, s.id, d.key).forEach(c => ids.add(c.id)))
     dayUnique[d.key] = ids.size
   })
 
@@ -90,7 +86,7 @@ export default function TransportWeekTable({ isOpen, onClose, clients, weekDates
           <div>
             <h3 className="wk-title">Vista semanal de transporte</h3>
             <p className="wk-subtitle">
-              Asistentes por día y horario · cada persona aparece 2 veces (llegada + salida) · separador cada {SEAT_CAP} = otro auto
+              Cupos según el plan · no refleja faltas ni recuperos · cada persona aparece 2 veces (llegada + salida) · separador cada {SEAT_CAP} = otro auto
             </p>
           </div>
           <div className="wk-header-actions">
@@ -146,10 +142,7 @@ export default function TransportWeekTable({ isOpen, onClose, clients, weekDates
                   </th>
                   {WEEK_DAYS.map(d => (
                     <td key={d.key} className="wk-cell">
-                      <Cell
-                        present={presentForDayShift(visibleClients, s.id, d.key, attFor(d.key))}
-                        attMap={attFor(d.key)}
-                      />
+                      <Cell present={plannedForDayShift(visibleClients, s.id, d.key)} />
                     </td>
                   ))}
                 </tr>

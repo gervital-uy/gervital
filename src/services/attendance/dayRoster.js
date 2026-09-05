@@ -42,12 +42,9 @@ export function indexAttendanceByClientId(records) {
  * @param {string} params.dayName - 'monday' | 'tuesday' | ...
  * @param {(client: object) => boolean} params.matchesShift - shift membership predicate
  * @param {Map<string, object>} [params.attendanceByClientId] - records for this date; empty = plan-only
- * @param {boolean} [params.reflectAbsences=true] - when false, absences are ignored: planned
- *   clients stay in `present` regardless of an absence record (absent comes back
- *   empty). Recovery attendees are still added. Used by the weekly views, which are plan-based.
  * @returns {{present: Array, absent: Array}} lists in input order
  */
-export function classifyDay({ clients, dayName, matchesShift, attendanceByClientId, reflectAbsences = true }) {
+export function classifyDay({ clients, dayName, matchesShift, attendanceByClientId }) {
   const att = attendanceByClientId || new Map()
   const present = []
   const absent = []
@@ -56,7 +53,7 @@ export function classifyDay({ clients, dayName, matchesShift, attendanceByClient
     const rec = att.get(c.id)
     const planned = c.plan?.assignedDays?.includes(dayName)
     if (planned) {
-      if (reflectAbsences && ABSENT_STATUSES.includes(rec?.status)) absent.push(c)
+      if (ABSENT_STATUSES.includes(rec?.status)) absent.push(c)
       else present.push(c)
     } else if (rec?.status === RECOVERY_STATUS) {
       present.push(c)
@@ -71,6 +68,21 @@ export function classifyDay({ clients, dayName, matchesShift, attendanceByClient
  */
 export function buildDayRoster(params) {
   return classifyDay(params).present
+}
+
+/**
+ * Clients whose plan puts them on a day+shift, ignoring attendance entirely.
+ * The weekly views (Grupos / Transporte) are commercial, not operational: they
+ * answer "how is the centre loaded across the week" and must stay agnostic to
+ * faltas and recuperos, which only move a person for one particular day.
+ * @param {object} params
+ * @param {Array} params.clients
+ * @param {string} params.dayName - 'monday' | 'tuesday' | ...
+ * @param {(client: object) => boolean} params.matchesShift
+ * @returns {Array} in input order
+ */
+export function buildPlannedRoster({ clients, dayName, matchesShift }) {
+  return clients.filter(c => matchesShift(c) && c.plan?.assignedDays?.includes(dayName))
 }
 
 /**

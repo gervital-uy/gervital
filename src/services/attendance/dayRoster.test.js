@@ -1,4 +1,4 @@
-import { buildDayRoster, classifyDay, isRecoveryAttendee, indexAttendanceByClientId, stripClientsFromSlots, ABSENT_STATUSES, RECOVERY_STATUS } from './dayRoster'
+import { buildDayRoster, buildPlannedRoster, classifyDay, isRecoveryAttendee, indexAttendanceByClientId, stripClientsFromSlots, ABSENT_STATUSES, RECOVERY_STATUS } from './dayRoster'
 
 // Helpers
 const client = (id, days, schedule = 'morning', over = {}) => ({
@@ -153,30 +153,36 @@ describe('classifyDay', () => {
     expect(absent).toEqual([])
   })
 
-  test('reflectAbsences=false keeps absent planned clients in present (weekly view)', () => {
-    const clients = [
-      client('present', ['monday']),
-      client('hebe', ['monday']),
-      client('onvac', ['monday'])
-    ]
-    const att = new Map([
-      ['hebe', { status: 'absent', isJustified: true, isChargeable: true }],
-      ['onvac', { status: 'absent', isJustified: true, isChargeable: false }]
-    ])
-    const { present, absent } = classifyDay({
-      clients, dayName: 'monday', matchesShift: morningShift, attendanceByClientId: att, reflectAbsences: false
-    })
-    expect(present.map(c => c.id)).toEqual(['present', 'hebe', 'onvac'])
-    expect(absent).toEqual([])
+})
+
+describe('buildPlannedRoster', () => {
+  test('returns the planned clients for the day+shift', () => {
+    const clients = [client('a', ['monday']), client('b', ['tuesday']), client('c', ['monday'], 'afternoon')]
+    const roster = buildPlannedRoster({ clients, dayName: 'monday', matchesShift: morningShift })
+    expect(roster.map(c => c.id)).toEqual(['a'])
   })
 
-  test('reflectAbsences=false still adds recovery attendees on non-planned days', () => {
+  test('ignores absences — an absent planned client still shows (commercial view)', () => {
+    const clients = [client('a', ['monday']), client('b', ['monday'])]
+    const roster = buildPlannedRoster({ clients, dayName: 'monday', matchesShift: morningShift })
+    expect(roster.map(c => c.id)).toEqual(['a', 'b'])
+  })
+
+  test('ignores recoveries — no one is added outside their plan', () => {
     const clients = [client('r', ['monday'], 'morning')]
-    const att = new Map([['r', { status: 'recovery' }]])
-    const { present } = classifyDay({
-      clients, dayName: 'thursday', matchesShift: morningShift, attendanceByClientId: att, reflectAbsences: false
-    })
-    expect(present.map(c => c.id)).toEqual(['r'])
+    const roster = buildPlannedRoster({ clients, dayName: 'thursday', matchesShift: morningShift })
+    expect(roster).toEqual([])
+  })
+
+  test('full_day clients match both shifts', () => {
+    const clients = [client('f', ['monday'], 'full_day')]
+    expect(buildPlannedRoster({ clients, dayName: 'monday', matchesShift: morningShift }).map(c => c.id)).toEqual(['f'])
+    expect(buildPlannedRoster({ clients, dayName: 'monday', matchesShift: afternoonShift }).map(c => c.id)).toEqual(['f'])
+  })
+
+  test('tolerates a client with no plan', () => {
+    const roster = buildPlannedRoster({ clients: [{ id: 'x' }], dayName: 'monday', matchesShift: morningShift })
+    expect(roster).toEqual([])
   })
 })
 
