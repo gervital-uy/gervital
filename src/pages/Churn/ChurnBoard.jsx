@@ -10,7 +10,7 @@ import { getChurnBoard, updateChurnStage } from '../../services/churn/churnServi
 import { applyDueReactivations } from '../../services/api'
 import { getReasons } from '../../services/churn/deactivationReasonService'
 import { useAuth } from '../../context/AuthContext'
-import { STAGES } from './churnConstants'
+import { STAGES, DEFAULT_MAX_DAYS, filterLostByAge } from './churnConstants'
 import ChurnColumn from './ChurnColumn'
 import ChurnCard from './ChurnCard'
 import ChurnCardModal from './ChurnCardModal'
@@ -29,8 +29,8 @@ export default function ChurnBoard() {
   const [selectedCard, setSelectedCard] = useState(null)
   const [reasonsByKey, setReasonsByKey] = useState({})
   const [managerOpen, setManagerOpen] = useState(false)
-  const [daysFilterEnabled, setDaysFilterEnabled] = useState(false)
-  const [maxDaysValue, setMaxDaysValue] = useState('30')
+  const [daysFilterEnabled, setDaysFilterEnabled] = useState(true)
+  const [maxDaysValue, setMaxDaysValue] = useState(DEFAULT_MAX_DAYS)
   const [onlyTrial, setOnlyTrial] = useState(false)
 
   const sensors = useSensors(
@@ -66,27 +66,29 @@ export default function ChurnBoard() {
     loadReasons()
   }, [loadBoard, loadReasons])
 
-  // Bajas dentro del umbral de antigüedad elegido.
-  const recentCards = useMemo(() => {
-    const maxDays = daysFilterEnabled && maxDaysValue ? Number(maxDaysValue) : null
-    return cards.filter(c => maxDays == null || c.daysSince == null || c.daysSince <= maxDays)
+  // El umbral de antigüedad solo esconde perdidos viejos; el resto del pipeline
+  // se ve completo siempre.
+  const visibleCards = useMemo(() => {
+    const parsed = Number(maxDaysValue)
+    const maxDays = daysFilterEnabled && maxDaysValue !== '' && Number.isFinite(parsed) ? parsed : null
+    return filterLostByAge(cards, maxDays)
   }, [cards, daysFilterEnabled, maxDaysValue])
 
-  // Se cuenta sobre recentCards, no sobre cards: el contador del botón tiene que
+  // Se cuenta sobre visibleCards, no sobre cards: el contador del botón tiene que
   // coincidir con lo que se ve al activarlo.
-  const trialCount = useMemo(() => recentCards.filter(c => c.wasTrial).length, [recentCards])
+  const trialCount = useMemo(() => visibleCards.filter(c => c.wasTrial).length, [visibleCards])
 
   const cardsByStage = useMemo(() => {
     const map = {}
     STAGES.forEach(s => { map[s.key] = [] })
-    recentCards
+    visibleCards
       .filter(c => !onlyTrial || c.wasTrial)
       .forEach(c => {
         if (map[c.stage]) map[c.stage].push(c)
         else map.new.push(c)
       })
     return map
-  }, [recentCards, onlyTrial])
+  }, [visibleCards, onlyTrial])
 
   function handleDragStart({ active }) {
     const data = active.data.current
@@ -151,7 +153,10 @@ export default function ChurnBoard() {
               </span>
             </button>
           )}
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-lg">
+          <div
+            title="Solo afecta a la columna Perdido"
+            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-lg"
+          >
             <button
               type="button"
               role="switch"
@@ -161,7 +166,7 @@ export default function ChurnBoard() {
             >
               <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${daysFilterEnabled ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
             </button>
-            <span className={daysFilterEnabled ? 'text-gray-700' : 'text-gray-400'}>Ocultar más de</span>
+            <span className={daysFilterEnabled ? 'text-gray-700' : 'text-gray-400'}>Ocultar perdidos de más de</span>
             <input
               type="number"
               min="1"

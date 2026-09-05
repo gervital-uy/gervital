@@ -9,6 +9,24 @@ export const STAGES = [
 
 export const STAGE_LABEL = Object.fromEntries(STAGES.map(s => [s.key, s.label]))
 
+// El filtro de antigüedad aplica SOLO a "Perdido": el resto del pipeline es
+// trabajo activo y no se oculta por el paso del tiempo.
+export const AGE_FILTER_STAGE = 'lost'
+export const DEFAULT_MAX_DAYS = '90'
+
+/**
+ * Oculta las bajas perdidas con más de `maxDays` días de antigüedad.
+ * @param {Array<{stage: string, daysSince: number|null}>} cards
+ * @param {number|null} maxDays - null desactiva el filtro
+ * @returns {Array} las mismas cards cuando no hay nada que ocultar
+ */
+export function filterLostByAge(cards, maxDays) {
+  if (maxDays == null) return cards
+  return cards.filter(c =>
+    c.stage !== AGE_FILTER_STAGE || c.daysSince == null || c.daysSince <= maxDays
+  )
+}
+
 // Cognitive tier → color hex.
 export const TIER_HEX = {
   A: '#16a34a',
