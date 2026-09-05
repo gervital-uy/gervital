@@ -4,6 +4,7 @@ import Modal from '../../components/ui/Modal'
 import Button from '../../components/ui/Button'
 import Input, { Select, Textarea } from '../../components/ui/Input'
 import { createFollowup, updateFollowup } from '../../services/api'
+import { todayStr } from '../../utils/date'
 
 export const FOLLOWUP_TYPES = [
   { value: 'seguimiento', label: 'Seguimiento' },
@@ -26,7 +27,7 @@ const truncate = (s, n = 60) => (!s ? '' : s.length > n ? s.slice(0, n - 1) + 'â
 
 const emptyForm = (professional) => ({
   type: 'seguimiento',
-  reportDate: new Date().toISOString().split('T')[0],
+  reportDate: todayStr(),
   professional: professional || '',
   discipline: '',
   motivation: '',

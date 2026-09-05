@@ -1,4 +1,5 @@
 import { supabase } from '../supabase/client'
+import { parseDateOnly } from '../../utils/date'
 import { CAR_COLORS, DEFAULT_FLEET, CLUB_LOCATION } from './transportConstants'
 import { buildDayRoster } from '../attendance/dayRoster'
 
@@ -90,7 +91,7 @@ export async function saveTransportDay(dateStr, shifts) {
 }
 
 export async function findLastWeekdayArrangement(dateStr) {
-  const date = new Date(dateStr + 'T12:00:00')
+  const date = parseDateOnly(dateStr)
   const dow = date.getDay()
   const { data, error } = await supabase
     .from('transport_day_arrangements')
@@ -100,7 +101,7 @@ export async function findLastWeekdayArrangement(dateStr) {
     .limit(100)
   if (error) throw new Error(error.message)
   for (const arr of (data || [])) {
-    const arrDate = new Date(arr.date + 'T12:00:00')
+    const arrDate = parseDateOnly(arr.date)
     if (arrDate.getDay() === dow) return arr
   }
   return null

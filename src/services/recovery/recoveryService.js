@@ -1,4 +1,5 @@
 import { supabase } from '../supabase/client'
+import { todayStr } from '../../utils/date'
 
 /**
  * Available recovery credits for a client (not expired, not consumed/revoked),
@@ -7,7 +8,7 @@ import { supabase } from '../supabase/client'
  * @returns {Promise<Array<{id, grantedAt, expiresAt, source, note}>>}
  */
 export async function getRecoveryCredits(clientId) {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayStr()
   const { data, error } = await supabase
     .from('recovery_credits')
     .select('id, granted_at, expires_at, source, note')

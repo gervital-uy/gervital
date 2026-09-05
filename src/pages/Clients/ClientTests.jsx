@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { parseDateOnly } from '../../utils/date'
 import { NavArrowRight, ArrowLeft, Plus, Edit, Trash, Eye } from 'iconoir-react'
 import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
@@ -9,7 +10,7 @@ import { deleteTestInstance } from '../../services/api'
 import TestInstanceModal from './TestInstanceModal'
 
 function fmtDate(d) {
-  return d ? format(new Date(`${d}T12:00:00`), 'd MMM yyyy', { locale: es }) : '—'
+  return d ? format(parseDateOnly(d), 'd MMM yyyy', { locale: es }) : '—'
 }
 
 // Unidad del campo que aporta el puntaje manual (ej. TUG → "s").

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { parseDateOnly } from '../../utils/date'
 import { Edit, Trash, Check, Xmark } from 'iconoir-react'
 import { useAuth } from '../../context/AuthContext'
 import { getChurnNotes, addChurnNote, updateChurnNote, deleteChurnNote, updateDeactivationDetails } from '../../services/churn/churnService'
@@ -25,7 +26,7 @@ function Field({ label, value, valueClass = 'text-gray-900' }) {
 function fmtDate(iso) {
   if (!iso) return '—'
   try {
-    return format(new Date(iso), "d 'de' MMMM yyyy", { locale: es })
+    return format(parseDateOnly(iso), "d 'de' MMMM yyyy", { locale: es })
   } catch {
     return '—'
   }

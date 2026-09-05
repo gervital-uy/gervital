@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { WarningCircle } from 'iconoir-react'
 import Modal from '../../components/ui/Modal'
 import Button from '../../components/ui/Button'
+import { todayStr } from '../../utils/date'
 import { getReasons } from '../../services/api'
 
 const NOTES_PLACEHOLDERS = {
@@ -9,11 +10,6 @@ const NOTES_PLACEHOLDERS = {
   default: 'Información adicional (opcional).'
 }
 
-// Fecha local de hoy en YYYY-MM-DD (sin líos de timezone del toISOString)
-const todayStr = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
 
 export default function DeactivateClientModal({ isOpen, onClose, client, onConfirm, loading }) {
   const [reason, setReason] = useState(null)

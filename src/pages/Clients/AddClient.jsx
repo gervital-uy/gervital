@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { formatCurrency } from '../../utils/format'
+import { todayStr, parseDateOnly } from '../../utils/date'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useJsApiLoader } from '@react-google-maps/api'
 import { ArrowLeft, Check, Plus, Trash, Bus, MapPin } from 'iconoir-react'
@@ -72,7 +73,7 @@ const INITIAL_FORM_DATA = {
   phone: '',
   birthDate: '',
   cognitiveLevel: 'A',
-  startDate: new Date().toISOString().split('T')[0],
+  startDate: todayStr(),
   documentType: 'ci',
   documentNumber: '',
   // Responsable de transferencia (texto libre)
@@ -491,7 +492,7 @@ export default function AddClient() {
             const { rawScore, interpretationLabel, scoreVersion } = computeScore(test, answers)
             await createTestInstance(newClient.id, {
               testId: test.id,
-              administeredAt: formData.startDate || new Date().toISOString().split('T')[0],
+              administeredAt: formData.startDate || todayStr(),
               administeredBy: user?.name,
               isGenesis: true,
               answers,
@@ -522,7 +523,7 @@ export default function AddClient() {
     }
   }
 
-  const previewDate = formData.startDate ? new Date(`${formData.startDate}T00:00:00`) : new Date()
+  const previewDate = formData.startDate ? parseDateOnly(formData.startDate) : new Date()
   const previewYear = isNaN(previewDate.getTime()) ? new Date().getFullYear() : previewDate.getFullYear()
   const previewMonth = isNaN(previewDate.getTime()) ? new Date().getMonth() : previewDate.getMonth()
   const planPrice = getPlanPriceSync(
@@ -546,7 +547,7 @@ export default function AddClient() {
   // Prorrateo del primer mes según la fecha de inicio (misma lógica que la calculadora de planes).
   const firstMonth = (() => {
     if (!formData.startDate) return null
-    const start = new Date(`${formData.startDate}T00:00:00`)
+    const start = parseDateOnly(formData.startDate)
     if (isNaN(start.getTime())) return null
     return calculateMonthProration({
       year: start.getFullYear(),

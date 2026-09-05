@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { Plus, Search, User, Heart, Flash, Calculator } from 'iconoir-react'
 import { differenceInYears, format } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { parseDateOnly } from '../../utils/date'
 import { getClients, deactivateClient, applyDueReactivations } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import { useReasonLabels } from '../../hooks/useReasonLabels'
@@ -121,14 +122,14 @@ const SORT_OPTIONS = [
 // MOCKED RES - Calcular edad desde fecha de nacimiento
 const calculateAge = (birthDate) => {
   if (!birthDate) return null
-  return differenceInYears(new Date(), new Date(birthDate))
+  return differenceInYears(new Date(), parseDateOnly(birthDate))
 }
 
 // Fecha efectiva de baja: prioriza deactivationDate (date-only, parseada local para no
 // correrse un día por timezone); fallback a deleted_at para registros viejos.
 const bajaDate = (client) =>
   client.deactivationDate
-    ? new Date(`${client.deactivationDate}T00:00:00`)
+    ? parseDateOnly(client.deactivationDate)
     : (client.deletedAt ? new Date(client.deletedAt) : null)
 
 // Ordena una copia de la lista según el criterio. Los vacíos (edad/tier sin dato) van al final.
@@ -148,7 +149,7 @@ const sortClients = (list, sortBy) => {
       return arr.sort((a, b) => cmpName(b, a))
     case 'age_desc':
       // Mayor edad primero = fecha de nacimiento más antigua primero
-      return arr.sort((a, b) => nullsLast(!a.birthDate, !b.birthDate, () => new Date(a.birthDate) - new Date(b.birthDate)))
+      return arr.sort((a, b) => nullsLast(!a.birthDate, !b.birthDate, () => parseDateOnly(a.birthDate) - parseDateOnly(b.birthDate)))
     case 'freq_desc':
       return arr.sort((a, b) => (b.plan?.frequency || 0) - (a.plan?.frequency || 0))
     case 'tier_asc':

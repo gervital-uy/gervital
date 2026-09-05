@@ -1,3 +1,5 @@
+import { parseDateOnly } from '../../utils/date'
+
 // Pure salary cost calculations (Uruguayan labor model).
 // asOf is injected (no internal Date.now) so results are deterministic and testable.
 
@@ -33,13 +35,15 @@ export function salarioVacacionalAnual(liquido) {
 // Suma de extraordinarios del empleado en los ultimos 12 meses respecto a asOf.
 export function extraordinarios12m(extraCosts, asOf) {
   if (!extraCosts || extraCosts.length === 0) return 0
-  const ref = asOf ? new Date(asOf) : new Date()
+  // Todo en local: mezclar fechas parseadas en UTC con un `new Date()` local movía
+  // el borde de la ventana de 12 meses.
+  const ref = asOf ? parseDateOnly(asOf) : new Date()
   const cutoff = new Date(ref)
   cutoff.setFullYear(cutoff.getFullYear() - 1)
   return extraCosts
     .filter(x => {
-      const d = new Date(x.date)
-      return d > cutoff && d <= ref
+      const d = parseDateOnly(x.date)
+      return d && d > cutoff && d <= ref
     })
     .reduce((sum, x) => sum + (Number(x.amount) || 0), 0)
 }

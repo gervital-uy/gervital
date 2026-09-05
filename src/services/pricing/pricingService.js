@@ -1,4 +1,5 @@
 import { supabase } from '../supabase/client'
+import { parseDateOnly } from '../../utils/date'
 
 /**
  * Get all plan pricing rows (todas las versiones por mes de vigencia).
@@ -71,8 +72,8 @@ export function calculateMonthProration({
   const days = assignedDays || []
   const freq = Number(frequency)
   if (days.length === 0 || !freq) return null
-  const start = startDate ? new Date(`${startDate}T00:00:00`) : null
-  if (start && isNaN(start.getTime())) return null
+  const start = startDate ? parseDateOnly(startDate) : null
+  if (startDate && !start) return null
   const lastDay = new Date(year, month + 1, 0).getDate()
   let charged = 0
   for (let dnum = 1; dnum <= lastDay; dnum++) {

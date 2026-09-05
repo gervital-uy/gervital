@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { format } from 'date-fns'
 import Modal from '../../components/ui/Modal'
 import Button from '../../components/ui/Button'
+import { todayStr } from '../../utils/date'
 import Input from '../../components/ui/Input'
 import { formatCurrency } from '../../utils/format'
 import { lastBusinessDayOfMonth } from '../../utils/date'
@@ -9,11 +10,6 @@ import { emitInvoice, markMonthPaid } from '../../services/api'
 
 const RATE_LIMIT_MS = 1100 // delay entre llamadas (rate-limit de Biller)
 
-// Fecha local de hoy en YYYY-MM-DD (sin líos de timezone del toISOString)
-const todayStr = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
 
 // runStatus por fila: idle | queued | running | success | error | skipped
 function eligibilityBadge(eligibility) {

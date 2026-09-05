@@ -3,6 +3,7 @@ import { NavArrowLeft, NavArrowRight, Bus } from 'iconoir-react'
 import Modal from '../../components/ui/Modal'
 import { Select } from '../../components/ui/Input'
 import { formatCurrency } from '../../utils/format'
+import { todayStr, parseDateOnly } from '../../utils/date'
 import { getPlanPricing, getPlanPriceSync, calculateMonthProration } from '../../services/pricing/pricingService'
 import { getTransportPricing, getTransportPriceSync } from '../../services/pricing/transportPricingService'
 
@@ -31,7 +32,6 @@ const DISTANCE_OPTIONS = [
   { value: '5_to_10km', label: '5 a 10 km' }
 ]
 
-const todayISO = () => new Date().toISOString().split('T')[0]
 
 // Agrupa los días hábiles del mes en semanas de 5 columnas (L-V), alineando la primera columna al lunes.
 function buildWeeks(year, month) {
@@ -59,11 +59,11 @@ export default function PlanCalculatorModal({ isOpen, onClose }) {
 
   const [assignedDays, setAssignedDays] = useState([])
   const [schedule, setSchedule] = useState('morning')
-  const [startDate, setStartDate] = useState(todayISO())
+  const [startDate, setStartDate] = useState(todayStr())
   const [hasTransport, setHasTransport] = useState(false)
   const [distanceRange, setDistanceRange] = useState('')
 
-  const start = new Date(`${startDate}T00:00:00`)
+  const start = parseDateOnly(startDate)
   const [viewYear, setViewYear] = useState(start.getFullYear())
   const [viewMonth, setViewMonth] = useState(start.getMonth())
 
@@ -81,7 +81,7 @@ export default function PlanCalculatorModal({ isOpen, onClose }) {
 
   // El calendario sigue a la fecha de alta: al cambiarla, salta a ese mes
   useEffect(() => {
-    const d = new Date(`${startDate}T00:00:00`)
+    const d = parseDateOnly(startDate)
     if (isNaN(d.getTime())) return
     setViewYear(d.getFullYear())
     setViewMonth(d.getMonth())

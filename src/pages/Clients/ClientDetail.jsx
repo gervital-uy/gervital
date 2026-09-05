@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { formatCurrency } from '../../utils/format'
+import { parseDateOnly } from '../../utils/date'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Edit, Phone, MapPin, Calendar, MoreVert, Trash, Check, NavArrowDown, NavArrowRight, Percentage, Heart, Flash } from 'iconoir-react'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, differenceInCalendarDays } from 'date-fns'
@@ -294,9 +295,9 @@ export default function ClientDetail() {
   const nextExpiry = (() => {
     if (!recoveryCredits.length) return { label: 'Sin días', className: 'text-gray-400' }
     const soonest = recoveryCredits[0].expiresAt // service returns soonest-first
-    const daysLeft = differenceInCalendarDays(new Date(soonest), new Date())
+    const daysLeft = differenceInCalendarDays(parseDateOnly(soonest), new Date())
     const className = daysLeft <= 7 ? 'text-red-600' : daysLeft <= 14 ? 'text-amber-600' : 'text-gray-400'
-    return { label: `Vence el ${format(new Date(soonest), "d 'de' MMM", { locale: es })}`, className }
+    return { label: `Vence el ${format(parseDateOnly(soonest), "d 'de' MMM", { locale: es })}`, className }
   })()
 
   return (
@@ -372,7 +373,7 @@ export default function ClientDetail() {
             })()}
           </div>
           <p className="text-sm text-gray-500">
-            Cliente desde {format(new Date(client.startDate), "d 'de' MMMM, yyyy", { locale: es })}
+            Cliente desde {format(parseDateOnly(client.startDate), "d 'de' MMMM, yyyy", { locale: es })}
           </p>
           {/* Biller receptor sync status */}
           <div className="mt-1">
@@ -454,7 +455,7 @@ export default function ClientDetail() {
         <div className="mb-4 p-4 rounded-xl border border-amber-300 bg-amber-50 flex items-start justify-between gap-4">
           <div>
             <p className="text-amber-900 font-semibold">
-              Cliente dado de baja el {format(client.deactivationDate ? new Date(`${client.deactivationDate}T00:00:00`) : new Date(client.deletedAt), "d 'de' MMMM, yyyy", { locale: es })}
+              Cliente dado de baja el {format(client.deactivationDate ? parseDateOnly(client.deactivationDate) : new Date(client.deletedAt), "d 'de' MMMM, yyyy", { locale: es })}
             </p>
             <p className="text-sm text-amber-800 mt-1">
               Motivo: {reasonLabels[client.deactivationReason] || '—'}
@@ -462,7 +463,7 @@ export default function ClientDetail() {
             </p>
             {client.scheduledReactivationDate && (
               <p className="text-sm text-amber-800 mt-1">
-                Reintegro programado para {format(new Date(`${client.scheduledReactivationDate}T00:00:00`), "d 'de' MMMM, yyyy", { locale: es })}
+                Reintegro programado para {format(parseDateOnly(client.scheduledReactivationDate), "d 'de' MMMM, yyyy", { locale: es })}
               </p>
             )}
           </div>
@@ -587,7 +588,7 @@ export default function ClientDetail() {
               <div>
                 <p className="text-sm text-gray-500">Fecha de nacimiento</p>
                 <p className="font-medium text-gray-900">
-                  {client.birthDate ? format(new Date(client.birthDate), "d 'de' MMMM, yyyy", { locale: es }) : '-'}
+                  {client.birthDate ? format(parseDateOnly(client.birthDate), "d 'de' MMMM, yyyy", { locale: es }) : '-'}
                 </p>
               </div>
               <div>
@@ -597,7 +598,7 @@ export default function ClientDetail() {
               <div>
                 <p className="text-sm text-gray-500">Fecha de ingreso</p>
                 <p className="font-medium text-gray-900">
-                  {format(new Date(client.startDate), "d 'de' MMMM, yyyy", { locale: es })}
+                  {format(parseDateOnly(client.startDate), "d 'de' MMMM, yyyy", { locale: es })}
                 </p>
               </div>
               <div>
@@ -898,7 +899,7 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
   const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`
   const discountedDays = attendance
     .filter(a => a.status === 'absent' && a.isChargeable === false && String(a.date).startsWith(monthPrefix))
-    .map(a => new Date(String(a.date) + 'T12:00:00'))
+    .map(a => parseDateOnly(a.date))
 
   const startDay = getDay(monthStart)
   const paddingDays = startDay === 0 ? 6 : startDay - 1
@@ -912,7 +913,7 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
   const isOverdue = !isPaid && today > dueDate
 
   // --- Billing calculation (local, for unpaid months) ---
-  const clientStart = new Date(client.startDate)
+  const clientStart = parseDateOnly(client.startDate)
   const effectiveStart = clientStart > monthStart ? clientStart : monthStart
   // Períodos de inactividad [from, to): días dentro no asisten ni se cobran (cubre la baja vigente
   // y cualquier gap cerrado por un reintegro pasado).
@@ -1087,7 +1088,7 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
                   {isPaid ? (
                     <>
                       <div className="px-3 py-2 text-xs text-gray-500 border-b border-gray-100">
-                        <div>Fecha de pago: {invoice.paidDate ? format(new Date(invoice.paidDate + 'T12:00:00'), "d/M/yyyy") : format(new Date(invoice.paidAt), "d/M/yyyy")}</div>
+                        <div>Fecha de pago: {invoice.paidDate ? format(parseDateOnly(invoice.paidDate), "d/M/yyyy") : format(new Date(invoice.paidAt), "d/M/yyyy")}</div>
                         {invoice.paidAmount && <div className="font-semibold text-gray-900">{formatCurrency(invoice.paidAmount)}</div>}
                         {invoice.paymentMethod && <div>{invoice.paymentMethod}</div>}
                       </div>
@@ -1271,7 +1272,7 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
         isOpen={modal === 'undoAbsence'}
         onClose={closeModal}
         title="Deshacer falta"
-        message={`¿Revertir la falta del ${selectedDate ? format(new Date(selectedDate), "d 'de' MMMM", { locale: es }) : ''}? ${selectedRecord?.isJustified && selectedRecord?.isChargeable ? 'Se descontará 1 día de recupero.' : ''}`}
+        message={`¿Revertir la falta del ${selectedDate ? format(parseDateOnly(selectedDate), "d 'de' MMMM", { locale: es }) : ''}? ${selectedRecord?.isJustified && selectedRecord?.isChargeable ? 'Se descontará 1 día de recupero.' : ''}`}
         confirmLabel="Sí, deshacer"
         onConfirm={() =>
           withProcessing(() => unregisterAbsence(client.id, selectedDate, user?.name))
@@ -1287,7 +1288,7 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
         confirmDisabled={client.recoveryDaysAvailable <= 0}
         message={client.recoveryDaysAvailable <= 0
           ? `Este cliente no tiene días de recupero disponibles. Para recuperar un día, primero debe registrarse una falta justificada con recupero.`
-          : `¿Marcar el ${selectedDate ? format(new Date(selectedDate), "d 'de' MMMM", { locale: es }) : ''} como día de recupero? Se usará 1 día de recupero (disponibles: ${client.recoveryDaysAvailable}).`}
+          : `¿Marcar el ${selectedDate ? format(parseDateOnly(selectedDate), "d 'de' MMMM", { locale: es }) : ''} como día de recupero? Se usará 1 día de recupero (disponibles: ${client.recoveryDaysAvailable}).`}
         confirmLabel="Confirmar recupero"
         confirmClass="bg-blue-600 hover:bg-blue-700"
         onConfirm={() =>
@@ -1301,7 +1302,7 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
         isOpen={modal === 'undoRecovery'}
         onClose={closeModal}
         title="Deshacer recupero"
-        message={`¿Deshacer el día recuperado del ${selectedDate ? format(new Date(selectedDate), "d 'de' MMMM", { locale: es }) : ''}? Se devolverá 1 día de recupero.`}
+        message={`¿Deshacer el día recuperado del ${selectedDate ? format(parseDateOnly(selectedDate), "d 'de' MMMM", { locale: es }) : ''}? Se devolverá 1 día de recupero.`}
         confirmLabel="Sí, deshacer"
         onConfirm={() =>
           withProcessing(() => unmarkDayRecoveryAttended(client.id, selectedDate, user?.name))
@@ -1572,7 +1573,7 @@ function AbsenceModal({ isOpen, onClose, date, isPaid, onConfirm }) {
     : `${baseOption} border-gray-200 hover:bg-red-50`
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Registrar falta — ${date ? format(new Date(date), "d 'de' MMMM", { locale: es }) : ''}`}>
+    <Modal isOpen={isOpen} onClose={onClose} title={`Registrar falta — ${date ? format(parseDateOnly(date), "d 'de' MMMM", { locale: es }) : ''}`}>
       <div className="space-y-3">
         <p className="text-sm text-gray-600">El cliente no asiste. ¿Fue una falta justificada?</p>
         <button type="button" onClick={() => setSelected('justified')} disabled={submitting} className={justifiedClass}>

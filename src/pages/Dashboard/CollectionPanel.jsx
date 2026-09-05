@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { NavArrowRight, Percentage } from 'iconoir-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { parseDateOnly } from '../../utils/date'
 import Card from '../../components/ui/Card'
 import SemiCircleGauge from './SemiCircleGauge'
 import { formatCurrency, formatCompact } from '../../utils/format'
@@ -19,10 +20,7 @@ const READONLY_TABS = ['cobrados', 'emitidas']
 
 const formatInvoiceDate = (d) => {
   if (!d) return '—'
-  const s = String(d)
-  // date-only ('YYYY-MM-DD') se parsea en local para no correrse un día por timezone
-  const dt = s.length === 10 ? new Date(`${s}T00:00:00`) : new Date(s)
-  return format(dt, "d MMM yyyy", { locale: es })
+  return format(parseDateOnly(d), "d MMM yyyy", { locale: es })
 }
 
 function Avatar({ firstName, lastName, avatarUrl }) {

@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { parseDateOnly } from '../../utils/date'
 import { Plus, Edit, Trash } from 'iconoir-react'
 import Button from '../../components/ui/Button'
 import { deleteFollowup } from '../../services/api'
 import FollowupModal, { motivationConfig, typeLabel } from './FollowupModal'
 
 function fmtDate(d) {
-  return d ? format(new Date(`${d}T12:00:00`), 'd MMM yyyy', { locale: es }) : '—'
+  return d ? format(parseDateOnly(d), 'd MMM yyyy', { locale: es }) : '—'
 }
 
 // Bloque de texto simple (no renderiza si está vacío).

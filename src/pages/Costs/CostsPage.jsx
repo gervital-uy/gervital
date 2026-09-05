@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { formatCurrency } from '../../utils/format'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { parseDateOnly } from '../../utils/date'
 import { useAuth } from '../../context/AuthContext'
 import MonthNavigator from '../../components/ui/MonthNavigator'
 import {
@@ -605,7 +606,7 @@ export default function CostsPage() {
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <h5 className="font-medium text-gray-900">{c.concept || 'Sin concepto'}</h5>
-                        <p className="text-xs text-gray-400 mt-1">{format(new Date(c.date), 'd MMM yyyy', { locale: es })}</p>
+                        <p className="text-xs text-gray-400 mt-1">{format(parseDateOnly(c.date), 'd MMM yyyy', { locale: es })}</p>
                       </div>
                       <div className="flex items-center gap-3">
                         <p className="text-lg font-semibold text-gray-900">{formatCurrency(c.amount)}</p>
@@ -860,7 +861,7 @@ function VariableExpenseCard({ expense, supplierName, onEdit, onDelete }) {
         </div>
         <div className="text-right">
           <p className="text-lg font-semibold text-gray-900">{formatCurrency(Number(expense.amount))}</p>
-          <p className="text-xs text-gray-400">{format(new Date(expense.date), 'd MMM', { locale: es })}</p>
+          <p className="text-xs text-gray-400">{format(parseDateOnly(expense.date), 'd MMM', { locale: es })}</p>
         </div>
       </div>
       <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100 justify-end">
@@ -1075,7 +1076,7 @@ function VariableExpenseModal({ isOpen, onClose, expense, categories, suppliers,
   const submit = async (e) => {
     e.preventDefault()
     setLoading(true)
-    const expenseDate = new Date(form.date)
+    const expenseDate = parseDateOnly(form.date)
     const payload = {
       supplierId: form.supplierId || null,
       categoryId: form.categoryId || null,
@@ -1252,7 +1253,7 @@ function ExtraordinaryExpenseModal({ isOpen, onClose, expense, categories, suppl
   const submit = async (e) => {
     e.preventDefault()
     setLoading(true)
-    const expenseDate = new Date(form.date)
+    const expenseDate = parseDateOnly(form.date)
     const payload = {
       supplierId: form.supplierId || null,
       categoryId: form.categoryId || null,
@@ -1686,7 +1687,7 @@ function EmployeeFichaModal({ isOpen, employee, onClose, onChanged, onDelete }) 
                   {a.notes && <span className="text-gray-400"> · {a.notes}</span>}
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400">{format(new Date(a.effectiveDate), 'd MMM yyyy', { locale: es })}</span>
+                  <span className="text-xs text-gray-400">{format(parseDateOnly(a.effectiveDate), 'd MMM yyyy', { locale: es })}</span>
                   <button onClick={() => removeAdjustment(a.id)} className="p-1 text-gray-300 hover:text-red-600 rounded">
                     <Trash className="w-3.5 h-3.5" />
                   </button>
@@ -1736,7 +1737,7 @@ function EmployeeFichaModal({ isOpen, employee, onClose, onChanged, onDelete }) 
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="font-medium text-gray-900">{formatCurrency(c.amount)}</span>
-                  <span className="text-xs text-gray-400">{format(new Date(c.date), 'd MMM yyyy', { locale: es })}</span>
+                  <span className="text-xs text-gray-400">{format(parseDateOnly(c.date), 'd MMM yyyy', { locale: es })}</span>
                   <button onClick={() => removeExtra(c.id)} className="p-1 text-gray-300 hover:text-red-600 rounded">
                     <Trash className="w-3.5 h-3.5" />
                   </button>

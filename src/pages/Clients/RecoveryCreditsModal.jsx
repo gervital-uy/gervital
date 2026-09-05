@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Plus, Trash } from 'iconoir-react'
 import { differenceInCalendarDays, format } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { parseDateOnly } from '../../utils/date'
 import Modal from '../../components/ui/Modal'
 import Button from '../../components/ui/Button'
 import { addRecoveryCredit, revokeRecoveryCredit } from '../../services/api'
@@ -95,12 +96,12 @@ export default function RecoveryCreditsModal({ isOpen, onClose, credits, canMuta
       ) : (
         <ul className="divide-y divide-gray-100">
           {credits.map(c => {
-            const daysLeft = differenceInCalendarDays(new Date(c.expiresAt), new Date())
+            const daysLeft = differenceInCalendarDays(parseDateOnly(c.expiresAt), new Date())
             return (
               <li key={c.id} className="flex items-center justify-between py-3">
                 <div>
                   <p className={`text-sm font-medium ${urgencyClasses(daysLeft)}`}>
-                    Vence el {format(new Date(c.expiresAt), "d 'de' MMM", { locale: es })}
+                    Vence el {format(parseDateOnly(c.expiresAt), "d 'de' MMM", { locale: es })}
                     <span className="font-normal"> · en {daysLeft} {daysLeft === 1 ? 'día' : 'días'}</span>
                   </p>
                   <p className="text-xs text-gray-400">

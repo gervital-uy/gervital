@@ -2,15 +2,11 @@ import { useState, useEffect } from 'react'
 import { RefreshDouble } from 'iconoir-react'
 import Modal from '../../components/ui/Modal'
 import Button from '../../components/ui/Button'
+import { todayStr } from '../../utils/date'
 import { Select } from '../../components/ui/Input'
 import { getClientPlanVersions } from '../../services/api'
 import { FREQUENCY_OPTIONS, SCHEDULE_OPTIONS, DAYS_OPTIONS, DISTANCE_OPTIONS } from './planOptions'
 
-// Fecha local de hoy en YYYY-MM-DD (sin líos de timezone del toISOString)
-const todayStr = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
 
 // "4 de agosto de 2026" a partir de un YYYY-MM-DD, sin corrimiento de timezone.
 const fmtLongDate = (dateStr) => {

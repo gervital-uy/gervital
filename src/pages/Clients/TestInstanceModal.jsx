@@ -5,6 +5,7 @@ import Input, { Select, Textarea } from '../../components/ui/Input'
 import { computeScore } from '../../services/clients/testScoring'
 import { getMaxScore } from '../../services/clients/testsCatalog'
 import { createTestInstance, updateTestInstance, uploadTestAttachment } from '../../services/api'
+import { todayStr } from '../../utils/date'
 
 const MODE_TITLES = { create: 'Nueva evaluación', edit: 'Editar evaluación', view: 'Evaluación' }
 
@@ -134,7 +135,7 @@ export default function TestInstanceModal({ isOpen, onClose, test, clientId, ins
   useEffect(() => {
     if (!isOpen) return
     setAnswers(instance?.answers || {})
-    setAdministeredAt(instance?.administeredAt || defaultDate || new Date().toISOString().split('T')[0])
+    setAdministeredAt(instance?.administeredAt || defaultDate || todayStr())
     setNotes(instance?.notes || '')
     setError(null)
   }, [isOpen, instance, defaultDate])

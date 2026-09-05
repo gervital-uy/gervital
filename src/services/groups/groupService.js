@@ -1,4 +1,5 @@
 import { supabase } from '../supabase/client'
+import { parseDateOnly, toDateStr } from '../../utils/date'
 
 // ── Day Operations ───────────────────────────────────────────────────────────
 
@@ -107,10 +108,16 @@ export async function removeClientFromActivity(activityId, clientId) {
   if (error) throw new Error(error.message)
 }
 
-export async function cleanupOldGroups(todayStr) {
-  const cutoff = new Date(todayStr)
+// Exportada para poder testear el corte sin tocar la DB: acá se borran filas,
+// así que el día exacto importa.
+export function cleanupCutoff(todayStr) {
+  const cutoff = parseDateOnly(todayStr)
   cutoff.setDate(cutoff.getDate() - 14)
-  const cutoffStr = cutoff.toISOString().slice(0, 10)
+  return toDateStr(cutoff)
+}
+
+export async function cleanupOldGroups(todayStr) {
+  const cutoffStr = cleanupCutoff(todayStr)
 
   const { error } = await supabase
     .from('group_time_slots')
