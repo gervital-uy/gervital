@@ -383,6 +383,24 @@ const chargeableAmount = (chargeableDays.length / plannedDays.length) * monthlyP
 
 ---
 
+## Fechas y zona horaria
+
+La app y el club están en GMT-3 (Uruguay, sin horario de verano). Dos reglas:
+
+**Frontend** — nunca usar `new Date('YYYY-MM-DD')` (parsea como medianoche UTC y
+devuelve el día anterior en local) ni `toISOString().slice(0,10)` (da el día UTC,
+que después de las 21:00 ya es mañana). Usar `src/utils/date.js`:
+`parseDateOnly(str)`, `todayStr()`, `toDateStr(date)`.
+
+**Base** — el rol `authenticator` (por donde entran PostgREST y las edge
+functions) tiene `TimeZone = America/Montevideo` desde la migración 081, así que
+`CURRENT_DATE` es el día uruguayo y no el UTC. Auth, storage y realtime siguen en
+UTC a propósito: usan otros roles de login y no calculan días calendario.
+
+Todas las columnas de día calendario son `date`; los `timestamptz` guardan
+instantes. No hay ningún `timestamp without time zone` en el esquema y no debería
+haberlo.
+
 ## Roles y Permisos
 
 Tres roles: `operador` < `admin` < `superadmin`. Fuente de verdad en frontend:

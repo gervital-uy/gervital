@@ -12,12 +12,14 @@ function lastDayOfMonth(year, month) {
 // los meses para un mismo líquido (ver monthlyCostToCompany).
 // Los extraordinarios de empleado NO se amortizan acá: pegan como cash en su mes
 // (employeeExtraForMonth), igual que los que no tienen empleado.
-// Aproximación histórica: no modela bajas (ver spec §7).
+// Una empleada dada de baja deja de sumar: antes `active` era sólo un flag visual
+// y el costo se seguía contando en todos los meses, para siempre.
 export function salaryCostForMonth(employees, year, month) {
   if (!employees || employees.length === 0) return 0
   const asOf = lastDayOfMonth(year, month)
   let total = 0
   for (const emp of employees) {
+    if (emp.active === false) continue // dada de baja: no suma
     const hiredBy = (emp.adjustments || []).filter(a => a.effectiveDate <= asOf)
     const sal = currentSalary(hiredBy)
     if (!sal) continue // todavía no había entrado ese mes

@@ -53,6 +53,23 @@ describe('salaryCostForMonth', () => {
   })
 })
 
+describe('salaryCostForMonth con bajas', () => {
+  test('una empleada dada de baja no suma', () => {
+    expect(salaryCostForMonth([emp({ active: false })], 2026, 5)).toBe(0)
+  })
+
+  test('active undefined o true sí suma (compat con datos viejos)', () => {
+    expect(salaryCostForMonth([emp()], 2026, 5)).toBeGreaterThan(0)
+    expect(salaryCostForMonth([emp({ active: true })], 2026, 5)).toBeGreaterThan(0)
+  })
+
+  test('sólo se descuenta la que está de baja', () => {
+    const activa = emp()
+    const debaja = emp({ active: false })
+    expect(salaryCostForMonth([activa, debaja], 2026, 5)).toBeCloseTo(salaryCostForMonth([activa], 2026, 5), 6)
+  })
+})
+
 describe('employeeExtraForMonth', () => {
   test('suma los extraordinarios con empleado fechados en el mes', () => {
     const e = emp({ extraCosts: [{ amount: 12000, date: '2026-06-15' }, { amount: 500, date: '2026-05-01' }] })
