@@ -36,7 +36,9 @@ function App() {
             <Route element={<RequireRole feature="users" />}>
               <Route path="gerencia" element={<Gerencia />} />
             </Route>
-            <Route path="costos" element={<CostsPage />} />
+            <Route element={<RequireRole feature="costs" />}>
+              <Route path="costos" element={<CostsPage />} />
+            </Route>
           </Route>
 
           {/* Catch all */}

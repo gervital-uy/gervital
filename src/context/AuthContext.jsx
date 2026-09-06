@@ -6,7 +6,7 @@ const AuthContext = createContext(null)
 // Feature -> roles allowed. Single source of truth for RBAC.
 const FEATURE_ROLES = {
   clients: ['operador', 'admin', 'superadmin'],
-  suppliers: ['operador', 'admin', 'superadmin'],
+  costs: ['admin', 'superadmin'],
   billing: ['admin', 'superadmin'],
   salaries: ['superadmin'],
   dashboard_financials: ['superadmin'],

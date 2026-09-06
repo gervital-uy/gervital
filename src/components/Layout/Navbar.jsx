@@ -26,7 +26,7 @@ export default function Navbar() {
     { to: '/grupos', label: 'Grupos', icon: Calendar, access: 'clients' },
     { to: '/transporte', label: 'Transporte', icon: Bus, access: 'clients' },
     { to: '/bajas', label: 'Bajas', icon: UserXmark, access: 'clients' },
-    { to: '/costos', label: 'Costos', icon: Shop, access: 'suppliers' },
+    { to: '/costos', label: 'Costos', icon: Shop, access: 'costs' },
     { to: '/gerencia', label: 'Gerencia', icon: Settings, access: 'users' }
   ]
 
