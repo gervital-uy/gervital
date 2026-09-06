@@ -1,4 +1,5 @@
-import { currentSalary, costoAnualMensualizado } from '../salaries/salaryCalc'
+import { currentSalary, monthlyCostToCompany } from '../salaries/salaryCalc'
+import { providerCostForMonth } from '../salaries/serviceProviderCalc'
 import { fixedCashForMonth, fixedMonthlyForMonth, isActive, monthlyAmount } from '../expenses/fixedExpenseCalc'
 
 // Last calendar day of a 0-indexed month as 'YYYY-MM-DD' (UTC-safe).
@@ -6,8 +7,12 @@ function lastDayOfMonth(year, month) {
   return new Date(Date.UTC(year, month + 1, 0)).toISOString().slice(0, 10)
 }
 
-// Monthlyized salary cost for (year, month): sum over employees hired by then.
-// Historical approximation — does not model terminations (see spec §7).
+// Costo de sueldos de (year, month): suma de las empleadas ya contratadas a esa
+// fecha, con el líquido vigente ese mes. El costo es plano — mismo importe todos
+// los meses para un mismo líquido (ver monthlyCostToCompany).
+// Los extraordinarios de empleado NO se amortizan acá: pegan como cash en su mes
+// (employeeExtraForMonth), igual que los que no tienen empleado.
+// Aproximación histórica: no modela bajas (ver spec §7).
 export function salaryCostForMonth(employees, year, month) {
   if (!employees || employees.length === 0) return 0
   const asOf = lastDayOfMonth(year, month)
@@ -15,11 +20,21 @@ export function salaryCostForMonth(employees, year, month) {
   for (const emp of employees) {
     const hiredBy = (emp.adjustments || []).filter(a => a.effectiveDate <= asOf)
     const sal = currentSalary(hiredBy)
-    if (!sal) continue // not yet hired this month
-    total += costoAnualMensualizado(
-      { nominal: sal.nominal, liquido: sal.liquido, extraCosts: emp.extraCosts },
-      asOf
-    )
+    if (!sal) continue // todavía no había entrado ese mes
+    total += monthlyCostToCompany(sal.liquido, emp.hasIrpf)
+  }
+  return total
+}
+
+// Extraordinarios CON empleado fechados en (year, month) — cash, sin amortizar.
+export function employeeExtraForMonth(employees, year, month) {
+  if (!employees || employees.length === 0) return 0
+  const prefix = `${year}-${String(month + 1).padStart(2, '0')}`
+  let total = 0
+  for (const emp of employees) {
+    for (const x of (emp.extraCosts || [])) {
+      if (String(x.date || '').slice(0, 7) === prefix) total += Number(x.amount) || 0
+    }
   }
   return total
 }
@@ -43,9 +58,9 @@ export function contingencyForMonth(rows, year, month) {
     .reduce((s, r) => s + (Number(r.amount) || 0), 0)
 }
 
-// Raw RPC rows + employees + fixed templates + standalone extras + contingency rows →
-// UI-ready month objects.
-export function mergeFinanceSeries(rpcRows, employees, fixedExpenses = [], standaloneCosts = [], contingencyRows = []) {
+// Raw RPC rows + employees + fixed templates + standalone extras + contingency rows
+// + prestadores de servicios → UI-ready month objects.
+export function mergeFinanceSeries(rpcRows, employees, fixedExpenses = [], standaloneCosts = [], contingencyRows = [], serviceProviders = []) {
   return (rpcRows || []).map(r => ({
     year: r.year,
     month: r.month,
@@ -61,8 +76,11 @@ export function mergeFinanceSeries(rpcRows, employees, fixedExpenses = [], stand
     contingencyExpenses: contingencyForMonth(contingencyRows, r.year, r.month),
     fixedCash: fixedCashForMonth(fixedExpenses, r.year, r.month),
     fixedMonthly: fixedMonthlyForMonth(fixedExpenses, r.year, r.month),
+    // Los prestadores cuentan como sueldo a efectos estadísticos: mismo balde.
     salaries: salaryCostForMonth(employees, r.year, r.month)
+      + employeeExtraForMonth(employees, r.year, r.month)
       + standaloneExtraForMonth(standaloneCosts, r.year, r.month)
+      + providerCostForMonth(serviceProviders)
   }))
 }
 

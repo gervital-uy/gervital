@@ -21,7 +21,6 @@ function mapAdjustment(row) {
   return {
     id: row.id,
     employeeId: row.employee_id,
-    nominal: Number(row.nominal),
     liquido: Number(row.liquido),
     effectiveDate: row.effective_date,
     notes: row.notes,
@@ -47,6 +46,7 @@ function mapEmployee(row) {
     name: row.name,
     role: row.role,
     semesterAdjustmentPct: Number(row.semester_adjustment_pct),
+    hasIrpf: !!row.has_irpf,
     active: row.active,
     adjustments: (row.adjustments || []).map(mapAdjustment),
     extraCosts: (row.extra_costs || []).map(mapExtraCost),
@@ -85,7 +85,7 @@ export async function getStandaloneExtraCosts() {
 
 /**
  * Create an employee + its first salary adjustment atomically.
- * @param {object} input - { name, role, semesterAdjustmentPct, nominal, liquido, effectiveDate, notes? }
+ * @param {object} input - { name, role, semesterAdjustmentPct, liquido, hasIrpf, effectiveDate, notes? }
  * @returns {Promise<string>} new employee id
  */
 export async function createEmployee(input) {
@@ -93,8 +93,8 @@ export async function createEmployee(input) {
     p_name: input.name,
     p_role: input.role || null,
     p_semester_adjustment_pct: input.semesterAdjustmentPct ?? 3.5,
-    p_nominal: input.nominal,
     p_liquido: input.liquido,
+    p_has_irpf: !!input.hasIrpf,
     p_effective_date: input.effectiveDate,
     p_notes: input.notes || null
   })
@@ -111,6 +111,7 @@ export async function updateEmployee(id, input) {
   if (input.name !== undefined) payload.name = input.name
   if (input.role !== undefined) payload.role = input.role
   if (input.semesterAdjustmentPct !== undefined) payload.semester_adjustment_pct = input.semesterAdjustmentPct
+  if (input.hasIrpf !== undefined) payload.has_irpf = input.hasIrpf
   if (input.active !== undefined) payload.active = input.active
   payload.updated_at = new Date().toISOString()
 
@@ -127,16 +128,30 @@ export async function deleteEmployee(id) {
 /**
  * Add a salary adjustment row (a real raise/change, kept in history).
  * @param {string} employeeId
- * @param {object} input - { nominal, liquido, effectiveDate, notes? }
+ * @param {object} input - { liquido, effectiveDate, notes? }
  */
 export async function addSalaryAdjustment(employeeId, input) {
   const { error } = await supabase.from('employee_salary_adjustments').insert({
     employee_id: employeeId,
-    nominal: input.nominal,
     liquido: input.liquido,
     effective_date: input.effectiveDate,
     notes: input.notes || null
   })
+  if (error) throw new Error(error.message)
+}
+
+/**
+ * Editar un ajuste existente: corregir el líquido o mover el mes de vigencia.
+ * @param {string} id
+ * @param {{liquido?: number, effectiveDate?: string, notes?: string}} input
+ */
+export async function updateSalaryAdjustment(id, input) {
+  const payload = {}
+  if (input.liquido !== undefined) payload.liquido = input.liquido
+  if (input.effectiveDate !== undefined) payload.effective_date = input.effectiveDate
+  if (input.notes !== undefined) payload.notes = input.notes || null
+
+  const { error } = await supabase.from('employee_salary_adjustments').update(payload).eq('id', id)
   if (error) throw new Error(error.message)
 }
 

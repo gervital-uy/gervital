@@ -215,10 +215,18 @@ export {
   updateEmployee,
   deleteEmployee,
   addSalaryAdjustment,
+  updateSalaryAdjustment,
   deleteSalaryAdjustment,
   addExtraCost,
   deleteExtraCost
 } from './salaries/salaryService'
+
+export {
+  getServiceProviders,
+  createServiceProvider,
+  updateServiceProvider,
+  deleteServiceProvider
+} from './salaries/serviceProviderService'
 
 // ============================================
 // TRANSPORT API

@@ -336,18 +336,39 @@ const chargeableAmount = (chargeableDays.length / plannedDays.length) * monthlyP
 - Roles: Operador, Admin y Superadmin
 - Indicador visual del usuario actual
 
-### 6. Proveedores (Operador, Admin, Superadmin)
+### 6. Proveedores (Admin, Superadmin)
 - Lista de proveedores por categoría
 - CRUD de proveedores
 - Categorías: Alimentación, Limpieza, Transporte, Salud, Insumos, etc.
 
-### 7. Gastos (Operador, Admin, Superadmin)
+### 7. Gastos (Admin, Superadmin)
 - Gastos recurrentes vs extraordinarios
 - Asociados a proveedores
 - Estados: pendiente/pagado
 - Resumen mensual
-- Sección **Sueldos** (Solo Superadmin): costos recurrentes mensuales (alta/baja) y costos
-  puntuales con tipo discreto (aguinaldo, despido, licencia vacacional, liquidación, otro)
+- Sección **Sueldos** (Solo Superadmin): el input es el **sueldo líquido mensual** + si la
+  empleada **aporta IRPF**. Todo lo demás se deriva (migraciones 079/080):
+
+  ```
+  nominal = liquido / (hasIrpf ? 0.781 : 0.804)
+
+  costo mensual a la compañía (plano todo el año) =
+      nominal
+    + nominal * (0.075 + 0.05 + 0.001)       // aportes patronales
+    + (nominal / 12) * (1 + 0.075 + 0.001)   // aguinaldo + cargas
+    + (nominal / 30) * (20 / 12) * 0.804     // salario vacacional
+  ```
+
+  `employee_salary_adjustments` guarda **sólo el líquido** por fecha de vigencia; la columna
+  `nominal` se eliminó para no tener dos fuentes de verdad. Se puede ajustar el líquido y
+  editar el mes de vigencia. Lógica pura en `salaryCalc.js` (`nominalFromLiquido`,
+  `monthlyCostBreakdown`, `monthlyCostToCompany`).
+- Los **extraordinarios de empleado** ya no se prorratean en el costo mensual: pegan como
+  cash en su mes (`employeeExtraForMonth`), igual que los que no tienen empleado
+- Sección **Prestadores de servicios** (Solo Superadmin, dentro de Sueldos): gasto fijo
+  mensual de quienes no son empleados (choferes contratados, contador, autos de terceros).
+  Monto mensual plano — sin aguinaldo, sin salario vacacional, sin mensualizar un anual.
+  Cuentan como sueldo en el dashboard (mismo balde `salaries`). Dar de baja deja de sumar.
 
 ### 8. Transporte (`/transporte`)
 - Programación diaria de vehículos para clientes con transporte
@@ -369,17 +390,19 @@ Tres roles: `operador` < `admin` < `superadmin`. Fuente de verdad en frontend:
 `hasAccess(feature)` y el helper puro `roleHasAccess(role, feature)`. Reforzado en
 backend con RLS (helper `is_admin_or_superadmin()`, migración 020).
 
-Features: `clients`, `suppliers`, `billing`, `salaries`, `dashboard_financials`, `users`.
+Features: `clients`, `costs`, `billing`, `salaries`, `dashboard_financials`, `users`.
 
 ### Operador
 - ✅ Clientes, grupos, transporte (operación y coordinación)
-- ✅ Proveedores y gastos
 - ✅ Calendario de asistencia (ver y editar)
+- ✅ Seguimiento de bajas
+- ❌ Costos: gastos y proveedores (feature `costs`, migración 077) — ni ver ni ingresar
 - ❌ Precios, montos, facturación y cobranza (header del detalle de cliente)
 - ❌ Dashboard financiero, Sueldos, Accesos
 
 ### Admin
 - ✅ Todo lo del operador
+- ✅ Costos: gastos fijos/variables/extraordinarios y proveedores (feature `costs`)
 - ✅ Facturación y cobranza (feature `billing`): precios/montos/estado en el detalle de cliente
 - ❌ Dashboard financiero, Sueldos, gestión de usuarios (Accesos)
 
@@ -387,7 +410,7 @@ Features: `clients`, `suppliers`, `billing`, `salaries`, `dashboard_financials`,
 - ✅ Acceso irrestricto
 - ✅ Gestión de usuarios (Accesos) — crear/editar/eliminar y resetear contraseña
 - ✅ Parte financiera del Dashboard
-- ✅ Sueldos (sección dentro de Proveedores/Gastos)
+- ✅ Sueldos (sección dentro de Costos)
 
 ### Gestión de usuarios y contraseñas
 - No hay sistema de mailing. Contraseña inicial al crear y al resetear: `Password1234!`.

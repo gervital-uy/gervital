@@ -1,7 +1,8 @@
-import { salaryCostForMonth, breakevenAnalysis } from './financeSeries'
+import { salaryCostForMonth, employeeExtraForMonth, breakevenAnalysis } from './financeSeries'
+import { monthlyCostToCompany } from '../salaries/salaryCalc'
 
 const emp = (over = {}) => ({
-  adjustments: [{ nominal: 1200, liquido: 1000, effectiveDate: '2026-01-01' }],
+  adjustments: [{ liquido: 1000, effectiveDate: '2026-01-01' }],
   extraCosts: [],
   ...over
 })
@@ -17,30 +18,51 @@ describe('salaryCostForMonth', () => {
     expect(salaryCostForMonth([emp()], 2025, 11)).toBe(0)
   })
 
-  test('after hire = monthlyized cost (nominal*12 + aguinaldo + vacacional)/12', () => {
-    // costoAnual = 1200*12 + 1200 + (1000/30*20) + 0 = 14400 + 1200 + 666.6667
-    // /12 ≈ 1355.5556
-    const v = salaryCostForMonth([emp()], 2026, 5) // junio 2026, month 5
-    expect(v).toBeCloseTo((14400 + 1200 + (1000 / 30) * 20) / 12, 2)
+  test('usa el costo mensual derivado del líquido', () => {
+    expect(salaryCostForMonth([emp()], 2026, 5)).toBeCloseTo(monthlyCostToCompany(1000, false), 6)
   })
 
-  test('extraordinary cost in trailing 12m increases the monthly cost', () => {
+  test('respeta el IRPF de la empleada', () => {
+    const conIrpf = emp({ hasIrpf: true })
+    expect(salaryCostForMonth([conIrpf], 2026, 5)).toBeCloseTo(monthlyCostToCompany(1000, true), 6)
+    expect(salaryCostForMonth([conIrpf], 2026, 5)).toBeGreaterThan(salaryCostForMonth([emp()], 2026, 5))
+  })
+
+  test('es plano: el mismo líquido cuesta lo mismo todos los meses', () => {
+    const e = [emp()]
+    const meses = [5, 6, 7, 8, 9, 10, 11].map(m => salaryCostForMonth(e, 2026, m))
+    expect(new Set(meses.map(v => v.toFixed(6))).size).toBe(1)
+  })
+
+  test('los extraordinarios ya NO se amortizan en el costo mensual', () => {
     const withExtra = emp({ extraCosts: [{ amount: 12000, date: '2026-03-15' }] })
-    const base = salaryCostForMonth([emp()], 2026, 5)
-    const bumped = salaryCostForMonth([withExtra], 2026, 5)
-    expect(bumped).toBeCloseTo(base + 12000 / 12, 2)
+    expect(salaryCostForMonth([withExtra], 2026, 5)).toBeCloseTo(salaryCostForMonth([emp()], 2026, 5), 6)
   })
 
   test('uses the salary in effect at that month, not a later raise', () => {
     const raised = emp({
       adjustments: [
-        { nominal: 1200, liquido: 1000, effectiveDate: '2026-01-01' },
-        { nominal: 2400, liquido: 2000, effectiveDate: '2026-07-01' }
+        { liquido: 1000, effectiveDate: '2026-01-01' },
+        { liquido: 2000, effectiveDate: '2026-07-01' }
       ]
     })
-    // junio 2026 (month 5) is before the July raise → uses 1200 nominal
-    const v = salaryCostForMonth([raised], 2026, 5)
-    expect(v).toBeCloseTo((14400 + 1200 + (1000 / 30) * 20) / 12, 2)
+    // junio 2026 (month 5) es anterior al aumento de julio → usa el líquido 1000
+    expect(salaryCostForMonth([raised], 2026, 5)).toBeCloseTo(monthlyCostToCompany(1000, false), 6)
+    // julio (month 6) ya toma el nuevo
+    expect(salaryCostForMonth([raised], 2026, 6)).toBeCloseTo(monthlyCostToCompany(2000, false), 6)
+  })
+})
+
+describe('employeeExtraForMonth', () => {
+  test('suma los extraordinarios con empleado fechados en el mes', () => {
+    const e = emp({ extraCosts: [{ amount: 12000, date: '2026-06-15' }, { amount: 500, date: '2026-05-01' }] })
+    expect(employeeExtraForMonth([e], 2026, 5)).toBe(12000)
+  })
+
+  test('cero si no hay del mes o no hay empleados', () => {
+    expect(employeeExtraForMonth([emp()], 2026, 5)).toBe(0)
+    expect(employeeExtraForMonth([], 2026, 5)).toBe(0)
+    expect(employeeExtraForMonth(undefined, 2026, 5)).toBe(0)
   })
 })
 
@@ -124,6 +146,36 @@ describe('contingencyForMonth', () => {
   test('cero si vacío/otro mes', () => {
     expect(contingencyForMonth([], 2026, 5)).toBe(0)
     expect(contingencyForMonth(rows, 2026, 6)).toBe(0)
+  })
+})
+
+describe('mergeFinanceSeries prestadores de servicios', () => {
+  test('los prestadores activos suman al balde de sueldos', () => {
+    const providers = [
+      { monthlyAmount: 44000, active: true },
+      { monthlyAmount: 28000, active: true }
+    ]
+    const out = mergeFinanceSeries([rpcRow()], [], [], [], [], providers)
+    expect(out[0].salaries).toBe(72000)
+  })
+
+  test('los dados de baja no suman', () => {
+    const providers = [
+      { monthlyAmount: 44000, active: true },
+      { monthlyAmount: 28000, active: false }
+    ]
+    expect(mergeFinanceSeries([rpcRow()], [], [], [], [], providers)[0].salaries).toBe(44000)
+  })
+
+  test('sin prestadores el resultado no cambia (retrocompatible)', () => {
+    expect(mergeFinanceSeries([rpcRow()], [])[0].salaries).toBe(0)
+  })
+
+  test('se suman a los extraordinarios sin empleado, no los reemplazan', () => {
+    const standalone = [{ amount: 12000, date: '2026-06-15' }]
+    const providers = [{ monthlyAmount: 44000, active: true }]
+    const out = mergeFinanceSeries([rpcRow()], [], [], standalone, [], providers)
+    expect(out[0].salaries).toBe(56000)
   })
 })
 

@@ -3,6 +3,13 @@ import { formatCurrency } from '../../utils/format'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { parseDateOnly } from '../../utils/date'
+import {
+  getServiceProviders,
+  createServiceProvider,
+  updateServiceProvider,
+  deleteServiceProvider
+} from '../../services/salaries/serviceProviderService'
+import { providerCostForMonth } from '../../services/salaries/serviceProviderCalc'
 import { useAuth } from '../../context/AuthContext'
 import MonthNavigator from '../../components/ui/MonthNavigator'
 import {
@@ -50,17 +57,18 @@ import {
   updateEmployee,
   deleteEmployee,
   addSalaryAdjustment,
+  updateSalaryAdjustment,
   deleteSalaryAdjustment,
   addExtraCost,
   deleteExtraCost,
   EXTRA_COST_TYPES,
   extraCostLabel
 } from '../../services/api'
-import { currentSalary, costoAnualMensualizado, aguinaldoAnual, salarioVacacionalAnual, extraordinarios12m } from '../../services/salaries/salaryCalc'
+import { currentSalary, monthlyCostBreakdown, extraordinarios12m } from '../../services/salaries/salaryCalc'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import Modal from '../../components/ui/Modal'
-import Input from '../../components/ui/Input'
+import Input, { Textarea, Checkbox } from '../../components/ui/Input'
 import { filterItems, groupByCategory } from '../../services/costs/costsFilters'
 import CostsFilterBar from './CostsFilterBar'
 import CategoryGroup from './CategoryGroup'
@@ -69,6 +77,8 @@ import ContingencyFundBar from './ContingencyFundBar'
 export default function CostsPage() {
   const { hasAccess } = useAuth()
   const [suppliers, setSuppliers] = useState([])
+  const [serviceProviders, setServiceProviders] = useState([])
+  const [providerModal, setProviderModal] = useState({ open: false, provider: null })
   const [expenses, setExpenses] = useState([])
   const [fixedExpenses, setFixedExpenses] = useState([])
   const [categories, setCategories] = useState([])
@@ -139,18 +149,39 @@ export default function CostsPage() {
       setExtraordinaryExpenses(extraordinaryData)
       setContingencyPct(pctSetting != null ? Number(pctSetting) : 10)
       if (hasAccess('salaries')) {
-        const [employeesData, standaloneData] = await Promise.all([
+        const [employeesData, standaloneData, providersData] = await Promise.all([
           getEmployees(),
-          getStandaloneExtraCosts()
+          getStandaloneExtraCosts(),
+          getServiceProviders()
         ])
         setEmployees(employeesData)
         setStandaloneCosts(standaloneData)
+        setServiceProviders(providersData)
       }
     } catch (error) {
       console.error('Error cargando datos:', error)
     } finally {
       setLoading(false)
     }
+  }
+
+  const providersMonthlyTotal = providerCostForMonth(serviceProviders)
+
+  const handleSaveProvider = async ({ id, ...input }) => {
+    if (id) await updateServiceProvider(id, input)
+    else await createServiceProvider(input)
+    setServiceProviders(await getServiceProviders())
+  }
+
+  const handleToggleProviderActive = async (provider) => {
+    await updateServiceProvider(provider.id, { active: !provider.active })
+    setServiceProviders(await getServiceProviders())
+  }
+
+  const handleDeleteProvider = async (id) => {
+    if (!window.confirm('¿Eliminar este prestador? Se borra del historial y deja de sumar en todos los meses.')) return
+    await deleteServiceProvider(id)
+    setServiceProviders(await getServiceProviders())
   }
 
   // Month totals for summary cards.
@@ -561,9 +592,7 @@ export default function CostsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {employees.map(emp => {
                 const cur = currentSalary(emp.adjustments)
-                const mensualizado = cur
-                  ? costoAnualMensualizado({ nominal: cur.nominal, liquido: cur.liquido, extraCosts: emp.extraCosts })
-                  : 0
+                const costo = cur ? monthlyCostBreakdown(cur.liquido, emp.hasIrpf) : null
                 return (
                   <Card
                     key={emp.id}
@@ -578,15 +607,90 @@ export default function CostsPage() {
                       {!emp.active && <span className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded">Baja</span>}
                     </div>
                     <div className="mt-3 pt-3 border-t border-gray-100">
-                      <p className="text-xs text-gray-500">Costo anual mensualizado</p>
-                      <p className="text-lg font-semibold text-gray-900">{formatCurrency(mensualizado)}</p>
-                      {cur && <p className="text-xs text-gray-400 mt-0.5">Nominal: {formatCurrency(cur.nominal)}</p>}
+                      <p className="text-xs text-gray-500">Costo mensual a la compañía</p>
+                      <p className="text-lg font-semibold text-gray-900">{formatCurrency(costo?.total || 0)}</p>
+                      {cur && (
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          Líquido: {formatCurrency(cur.liquido)} · Nominal: {formatCurrency(costo.nominal)}
+                          {emp.hasIrpf && ' · IRPF'}
+                        </p>
+                      )}
                     </div>
                   </Card>
                 )
               })}
             </div>
           )}
+
+          {/* Prestadores de servicios (no empleados): monto fijo mensual, sin
+              aguinaldo ni vacacional. Cuentan como sueldo en el dashboard. */}
+          <div className="mt-6">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-baseline gap-2">
+                <h4 className="text-sm font-semibold text-gray-700">Prestadores de servicios</h4>
+                {providersMonthlyTotal > 0 && (
+                  <span className="text-xs text-gray-500">{formatCurrency(providersMonthlyTotal)}/mes</span>
+                )}
+              </div>
+              <Button variant="secondary" onClick={() => setProviderModal({ open: true, provider: null })}>
+                <Plus className="w-4 h-4" />
+                Prestador
+              </Button>
+            </div>
+            {serviceProviders.length === 0 ? (
+              <Card className="p-6 text-center">
+                <p className="text-gray-500">Sin prestadores de servicios</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  Gastos fijos mensuales de quienes no son empleados: choferes contratados, contador, autos de terceros
+                </p>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                {serviceProviders.map(pv => (
+                  <Card key={pv.id} className={`p-4 ${!pv.active ? 'opacity-60' : ''}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h5 className="font-medium text-gray-900 truncate">{pv.name}</h5>
+                          {!pv.active && (
+                            <span className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded shrink-0">Baja</span>
+                          )}
+                        </div>
+                        {pv.role && <p className="text-xs text-gray-500 mt-0.5">{pv.role}</p>}
+                        {pv.notes && <p className="text-xs text-gray-400 mt-1">{pv.notes}</p>}
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <div className="text-right">
+                          <p className="text-lg font-semibold text-gray-900">{formatCurrency(pv.monthlyAmount)}</p>
+                          <p className="text-xs text-gray-400">por mes</p>
+                        </div>
+                        <button
+                          onClick={() => setProviderModal({ open: true, provider: pv })}
+                          className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                          title="Editar"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleToggleProviderActive(pv)}
+                          className="text-xs px-2 py-1 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                        >
+                          {pv.active ? 'Dar de baja' : 'Reactivar'}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteProvider(pv.id)}
+                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Eliminar"
+                        >
+                          <Trash className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Extraordinarios sin empleado */}
           <div className="mt-6">
@@ -700,6 +804,14 @@ export default function CostsPage() {
         isOpen={addEmployeeOpen}
         onClose={() => setAddEmployeeOpen(false)}
         onSave={loadData}
+      />
+
+      {/* Service provider modal */}
+      <ServiceProviderModal
+        isOpen={providerModal.open}
+        provider={providerModal.provider}
+        onClose={() => setProviderModal({ open: false, provider: null })}
+        onSave={handleSaveProvider}
       />
 
       {/* Standalone extra cost modal */}
@@ -1417,13 +1529,35 @@ function SupplierModal({ isOpen, onClose, supplier, categories, onSave }) {
   )
 }
 
+// El nominal y el costo a la compañía se derivan del líquido: se muestran en
+// vivo para que quien carga vea qué está generando.
+function DerivedSalaryPreview({ liquido, hasIrpf }) {
+  const n = Number(liquido)
+  if (!n) return null
+  const b = monthlyCostBreakdown(n, hasIrpf)
+  return (
+    <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 space-y-1">
+      <div className="flex justify-between">
+        <span>Nominal (líquido / {hasIrpf ? '0,781' : '0,804'})</span>
+        <span className="font-medium text-gray-900">{formatCurrency(b.nominal)}</span>
+      </div>
+      <div className="flex justify-between"><span>+ Aportes patronales (12,6%)</span><span>{formatCurrency(b.aportes)}</span></div>
+      <div className="flex justify-between"><span>+ Aguinaldo mensualizado</span><span>{formatCurrency(b.aguinaldo)}</span></div>
+      <div className="flex justify-between"><span>+ Salario vacacional</span><span>{formatCurrency(b.vacacional)}</span></div>
+      <div className="flex justify-between pt-1 border-t border-gray-200 font-semibold text-gray-900">
+        <span>Costo mensual a la compañía</span><span>{formatCurrency(b.total)}</span>
+      </div>
+    </div>
+  )
+}
+
 function AddEmployeeModal({ isOpen, onClose, onSave }) {
   const today = format(new Date(), 'yyyy-MM-dd')
-  const [form, setForm] = useState({ name: '', role: '', nominal: '', liquido: '', semesterAdjustmentPct: '3.5', effectiveDate: today })
+  const [form, setForm] = useState({ name: '', role: '', liquido: '', hasIrpf: false, semesterAdjustmentPct: '3.5', effectiveDate: today })
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    if (isOpen) setForm({ name: '', role: '', nominal: '', liquido: '', semesterAdjustmentPct: '3.5', effectiveDate: today })
+    if (isOpen) setForm({ name: '', role: '', liquido: '', hasIrpf: false, semesterAdjustmentPct: '3.5', effectiveDate: today })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen])
 
@@ -1435,8 +1569,8 @@ function AddEmployeeModal({ isOpen, onClose, onSave }) {
         name: form.name,
         role: form.role,
         semesterAdjustmentPct: Number(form.semesterAdjustmentPct) || 3.5,
-        nominal: Number(form.nominal),
         liquido: Number(form.liquido),
+        hasIrpf: form.hasIrpf,
         effectiveDate: form.effectiveDate
       })
       onSave()
@@ -1453,10 +1587,13 @@ function AddEmployeeModal({ isOpen, onClose, onSave }) {
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input label="Nombre" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
         <Input label="Rol" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} placeholder="Ej: Coordinadora" />
-        <div className="grid grid-cols-2 gap-4">
-          <Input label="Sueldo nominal" type="number" value={form.nominal} onChange={(e) => setForm({ ...form, nominal: e.target.value })} required />
-          <Input label="Sueldo líquido" type="number" value={form.liquido} onChange={(e) => setForm({ ...form, liquido: e.target.value })} required />
-        </div>
+        <Input label="Sueldo líquido mensual" type="number" min="0" step="0.01" value={form.liquido} onChange={(e) => setForm({ ...form, liquido: e.target.value })} required />
+        <Checkbox
+          label="Aporta IRPF"
+          checked={form.hasIrpf}
+          onChange={(e) => setForm({ ...form, hasIrpf: e.target.checked })}
+        />
+        <DerivedSalaryPreview liquido={form.liquido} hasIrpf={form.hasIrpf} />
         <div className="grid grid-cols-2 gap-4">
           <Input label="Ajuste semestral (%)" type="number" step="0.1" value={form.semesterAdjustmentPct} onChange={(e) => setForm({ ...form, semesterAdjustmentPct: e.target.value })} />
           <Input label="Vigente desde" type="date" value={form.effectiveDate} onChange={(e) => setForm({ ...form, effectiveDate: e.target.value })} required />
@@ -1464,6 +1601,65 @@ function AddEmployeeModal({ isOpen, onClose, onSave }) {
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
           <Button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Crear'}</Button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+// Prestador de servicios: nombre, rol y monto mensual. El monto mensual es el
+// monto mensual — no hay historial de tarifa ni nada que mensualizar.
+function ServiceProviderModal({ isOpen, onClose, provider, onSave }) {
+  const [form, setForm] = useState({ name: '', role: '', monthlyAmount: '', notes: '' })
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!isOpen) return
+    setForm({
+      name: provider?.name || '',
+      role: provider?.role || '',
+      monthlyAmount: provider?.monthlyAmount != null ? String(provider.monthlyAmount) : '',
+      notes: provider?.notes || ''
+    })
+  }, [isOpen, provider])
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      await onSave({
+        id: provider?.id,
+        name: form.name,
+        role: form.role,
+        monthlyAmount: Number(form.monthlyAmount),
+        notes: form.notes
+      })
+      onClose()
+    } catch (err) {
+      alert('Error al guardar el prestador: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title={provider ? 'Editar prestador' : 'Nuevo prestador de servicios'}>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Input label="Nombre" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+        <Input label="Rol" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} placeholder="Ej: Chofer, Contador" />
+        <Input
+          label="Monto mensual"
+          type="number"
+          min="0"
+          step="0.01"
+          value={form.monthlyAmount}
+          onChange={(e) => setForm({ ...form, monthlyAmount: e.target.value })}
+          required
+        />
+        <Textarea label="Notas" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} />
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
+          <Button type="submit" disabled={saving}>{saving ? 'Guardando...' : (provider ? 'Guardar' : 'Crear')}</Button>
         </div>
       </form>
     </Modal>
@@ -1520,12 +1716,9 @@ function EmployeeFichaModal({ isOpen, employee, onClose, onChanged, onDelete }) 
   if (!employee) return null
 
   const cur = currentSalary(employee.adjustments)
-  const nominal = cur ? cur.nominal : 0
   const liquido = cur ? cur.liquido : 0
-  const ag = aguinaldoAnual(nominal)
-  const sv = salarioVacacionalAnual(liquido)
+  const costo = monthlyCostBreakdown(liquido, employee.hasIrpf)
   const extra12 = extraordinarios12m(employee.extraCosts)
-  const mensualizado = costoAnualMensualizado({ nominal, liquido, extraCosts: employee.extraCosts })
 
   const today = format(new Date(), 'yyyy-MM-dd')
 
@@ -1533,12 +1726,19 @@ function EmployeeFichaModal({ isOpen, employee, onClose, onChanged, onDelete }) 
     e.preventDefault()
     setBusy(true)
     try {
-      await addSalaryAdjustment(employee.id, {
-        nominal: Number(adjForm.nominal),
-        liquido: Number(adjForm.liquido),
-        effectiveDate: adjForm.effectiveDate,
-        notes: adjForm.notes
-      })
+      if (adjForm.id) {
+        await updateSalaryAdjustment(adjForm.id, {
+          liquido: Number(adjForm.liquido),
+          effectiveDate: adjForm.effectiveDate,
+          notes: adjForm.notes
+        })
+      } else {
+        await addSalaryAdjustment(employee.id, {
+          liquido: Number(adjForm.liquido),
+          effectiveDate: adjForm.effectiveDate,
+          notes: adjForm.notes
+        })
+      }
       setAdjForm(null)
       onChanged()
     } catch (err) {
@@ -1555,7 +1755,8 @@ function EmployeeFichaModal({ isOpen, employee, onClose, onChanged, onDelete }) 
       await updateEmployee(employee.id, {
         name: editForm.name,
         role: editForm.role,
-        semesterAdjustmentPct: Number(editForm.semesterAdjustmentPct) || 3.5
+        semesterAdjustmentPct: Number(editForm.semesterAdjustmentPct) || 3.5,
+        hasIrpf: editForm.hasIrpf
       })
       setEditForm(null)
       onChanged()
@@ -1636,6 +1837,11 @@ function EmployeeFichaModal({ isOpen, employee, onClose, onChanged, onDelete }) 
             <Input label="Nombre" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} required />
             <Input label="Rol" value={editForm.role} onChange={(e) => setEditForm({ ...editForm, role: e.target.value })} placeholder="Ej: Coordinadora" />
             <Input label="Ajuste semestral (%)" type="number" step="0.1" value={editForm.semesterAdjustmentPct} onChange={(e) => setEditForm({ ...editForm, semesterAdjustmentPct: e.target.value })} />
+            <Checkbox
+              label="Aporta IRPF (cambia el nominal derivado)"
+              checked={editForm.hasIrpf}
+              onChange={(e) => setEditForm({ ...editForm, hasIrpf: e.target.checked })}
+            />
             <div className="flex justify-end gap-2">
               <Button type="button" variant="secondary" onClick={() => setEditForm(null)}>Cancelar</Button>
               <Button type="submit" disabled={busy}>Guardar</Button>
@@ -1644,33 +1850,45 @@ function EmployeeFichaModal({ isOpen, employee, onClose, onChanged, onDelete }) 
         )}
         {/* Header: costo anual mensualizado + desglose */}
         <div className="bg-gray-50 rounded-xl p-4">
-          <p className="text-xs text-gray-500">Costo anual mensualizado (≠ nominal)</p>
-          <p className="text-2xl font-bold text-gray-900">{formatCurrency(mensualizado)}</p>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-3 text-xs text-gray-600">
-            <span>Nominal: {formatCurrency(nominal)}</span>
-            <span>Líquido: {formatCurrency(liquido)}</span>
-            <span>Aguinaldo/año: {formatCurrency(ag)}</span>
-            <span>Sal. vacacional/año: {formatCurrency(sv)}</span>
-            <span>Extraord. 12m: {formatCurrency(extra12)}</span>
-            <span>Ajuste semestral: {employee.semesterAdjustmentPct}%</span>
+          <p className="text-xs text-gray-500">Costo mensual a la compañía (plano todo el año)</p>
+          <p className="text-2xl font-bold text-gray-900">{formatCurrency(costo.total)}</p>
+          <div className="mt-3 space-y-1 text-xs text-gray-600">
+            <div className="flex justify-between">
+              <span>Líquido {employee.hasIrpf ? '(aporta IRPF)' : '(sin IRPF)'}</span>
+              <span className="font-medium text-gray-900">{formatCurrency(liquido)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Nominal (líquido / {employee.hasIrpf ? '0,781' : '0,804'})</span>
+              <span className="font-medium text-gray-900">{formatCurrency(costo.nominal)}</span>
+            </div>
+            <div className="flex justify-between"><span>+ Aportes patronales (12,6%)</span><span>{formatCurrency(costo.aportes)}</span></div>
+            <div className="flex justify-between"><span>+ Aguinaldo mensualizado</span><span>{formatCurrency(costo.aguinaldo)}</span></div>
+            <div className="flex justify-between"><span>+ Salario vacacional</span><span>{formatCurrency(costo.vacacional)}</span></div>
           </div>
+          <p className="text-xs text-gray-400 mt-3">
+            Extraord. últimos 12m: {formatCurrency(extra12)} (se cobran en su mes, no se prorratean)
+          </p>
         </div>
 
         {/* Sueldo: historia de ajustes */}
         <div>
           <div className="flex items-center justify-between mb-2">
             <h4 className="text-sm font-semibold text-gray-700">Sueldo (historia)</h4>
-            <button className="text-xs text-blue-600 hover:underline" onClick={() => setAdjForm({ nominal: '', liquido: '', effectiveDate: today, notes: '' })}>
+            <button className="text-xs text-blue-600 hover:underline" onClick={() => setAdjForm({ id: null, liquido: '', effectiveDate: today, notes: '' })}>
               + Registrar ajuste
             </button>
           </div>
           {adjForm && (
             <form onSubmit={submitAdjustment} className="bg-blue-50 rounded-lg p-3 mb-3 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <Input label="Nominal" type="number" value={adjForm.nominal} onChange={(e) => setAdjForm({ ...adjForm, nominal: e.target.value })} required />
-                <Input label="Líquido" type="number" value={adjForm.liquido} onChange={(e) => setAdjForm({ ...adjForm, liquido: e.target.value })} required />
-              </div>
-              <Input label="Vigente desde" type="date" value={adjForm.effectiveDate} onChange={(e) => setAdjForm({ ...adjForm, effectiveDate: e.target.value })} required />
+              <Input label="Sueldo líquido" type="number" min="0" step="0.01" value={adjForm.liquido} onChange={(e) => setAdjForm({ ...adjForm, liquido: e.target.value })} required />
+              <Input
+                label="Vigente desde (mes)"
+                type="month"
+                value={String(adjForm.effectiveDate).slice(0, 7)}
+                onChange={(e) => setAdjForm({ ...adjForm, effectiveDate: e.target.value ? `${e.target.value}-01` : '' })}
+                required
+              />
+              <DerivedSalaryPreview liquido={adjForm.liquido} hasIrpf={employee.hasIrpf} />
               <Input label="Notas" value={adjForm.notes} onChange={(e) => setAdjForm({ ...adjForm, notes: e.target.value })} />
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="secondary" onClick={() => setAdjForm(null)}>Cancelar</Button>
@@ -1682,12 +1900,21 @@ function EmployeeFichaModal({ isOpen, employee, onClose, onChanged, onDelete }) 
             {employee.adjustments.map(a => (
               <div key={a.id} className="flex items-center justify-between text-sm border border-gray-100 rounded-lg px-3 py-2">
                 <div>
-                  <span className="font-medium text-gray-900">{formatCurrency(a.nominal)}</span>
-                  <span className="text-gray-400"> nom · {formatCurrency(a.liquido)} líq</span>
+                  <span className="font-medium text-gray-900">{formatCurrency(a.liquido)}</span>
+                  <span className="text-gray-400"> líquido · {formatCurrency(monthlyCostBreakdown(a.liquido, employee.hasIrpf).total)} costo</span>
                   {a.notes && <span className="text-gray-400"> · {a.notes}</span>}
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400">{format(parseDateOnly(a.effectiveDate), 'd MMM yyyy', { locale: es })}</span>
+                  <span className="text-xs text-gray-400">
+                    desde {format(parseDateOnly(a.effectiveDate), 'MMM yyyy', { locale: es })}
+                  </span>
+                  <button
+                    onClick={() => setAdjForm({ id: a.id, liquido: String(a.liquido), effectiveDate: a.effectiveDate, notes: a.notes || '' })}
+                    className="p-1 text-gray-300 hover:text-indigo-600 rounded"
+                    title="Editar líquido y mes de vigencia"
+                  >
+                    <Edit className="w-3.5 h-3.5" />
+                  </button>
                   <button onClick={() => removeAdjustment(a.id)} className="p-1 text-gray-300 hover:text-red-600 rounded">
                     <Trash className="w-3.5 h-3.5" />
                   </button>
@@ -1751,7 +1978,7 @@ function EmployeeFichaModal({ isOpen, employee, onClose, onChanged, onDelete }) 
         <div className="flex justify-between items-center pt-2 border-t border-gray-100">
           <div className="flex gap-4">
             <button
-              onClick={() => setEditForm({ name: employee.name, role: employee.role || '', semesterAdjustmentPct: String(employee.semesterAdjustmentPct) })}
+              onClick={() => setEditForm({ name: employee.name, role: employee.role || '', semesterAdjustmentPct: String(employee.semesterAdjustmentPct), hasIrpf: employee.hasIrpf })}
               className="text-sm text-blue-600 hover:underline"
             >
               Editar
