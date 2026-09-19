@@ -6,8 +6,9 @@
  * Rule:
  *  - Planned client (assignedDays includes dayName AND matchesShift) is present,
  *    UNLESS their record for that date is an absence. Whether the absence is
- *    justified/chargeable is NOT relevant to the daily roster UIs (Grupos /
- *    Transporte): all absences are flattened into a single "falta".
+ *    justified/chargeable does not change the roster (all absences are flattened
+ *    into a single "falta" chip), but the record travels with the client as
+ *    `absence` so the UIs can show the motivo on hover.
  *  - A client attending on a recovery day (record status 'recovery') is added
  *    even if the day is not in their plan, as long as matchesShift is true.
  *    Recovery records do not carry a shift, so shift membership is derived from
@@ -35,14 +36,17 @@ export function indexAttendanceByClientId(records) {
 
 /**
  * Classify the clients matching a day+shift into present / absent.
- * Absence reasons are flattened: any ABSENT_STATUSES record counts as a plain
- * absence ("falta"), which is all the daily roster UIs care about.
+ * Absence reasons are flattened for presence purposes: any ABSENT_STATUSES
+ * record counts as a plain absence ("falta"). Each absent client is returned as
+ * a shallow copy carrying its attendance record in `absence` (isJustified /
+ * isChargeable / notes), which the chips use to render the motivo en hover.
  * @param {object} params
  * @param {Array} params.clients - full client list (each with plan.assignedDays, plan.schedule)
  * @param {string} params.dayName - 'monday' | 'tuesday' | ...
  * @param {(client: object) => boolean} params.matchesShift - shift membership predicate
  * @param {Map<string, object>} [params.attendanceByClientId] - records for this date; empty = plan-only
- * @returns {{present: Array, absent: Array}} lists in input order
+ * @returns {{present: Array, absent: Array}} lists in input order; absent
+ *   entries are `{...client, absence: record}`
  */
 export function classifyDay({ clients, dayName, matchesShift, attendanceByClientId }) {
   const att = attendanceByClientId || new Map()
@@ -53,7 +57,7 @@ export function classifyDay({ clients, dayName, matchesShift, attendanceByClient
     const rec = att.get(c.id)
     const planned = c.plan?.assignedDays?.includes(dayName)
     if (planned) {
-      if (ABSENT_STATUSES.includes(rec?.status)) absent.push(c)
+      if (ABSENT_STATUSES.includes(rec?.status)) absent.push({ ...c, absence: rec })
       else present.push(c)
     } else if (rec?.status === RECOVERY_STATUS) {
       present.push(c)

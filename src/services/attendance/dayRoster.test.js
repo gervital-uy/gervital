@@ -116,6 +116,15 @@ describe('classifyDay', () => {
     expect(absent.map(c => c.id)).toEqual(['hebe', 'onvac'])
   })
 
+  test('absent clients carry their attendance record for the motivo tooltip', () => {
+    const clients = [client('hebe', ['monday'])]
+    const record = { status: 'absent', isJustified: true, isChargeable: true, notes: 'Cita médica' }
+    const att = new Map([['hebe', record]])
+    const { absent } = classifyDay({ clients, dayName: 'monday', matchesShift: morningShift, attendanceByClientId: att })
+    expect(absent[0].absence).toEqual(record)
+    expect(absent[0].id).toBe('hebe')
+  })
+
   test('recovery attendee (non-planned day) lands in present, not absent', () => {
     const clients = [client('r', ['monday'], 'morning')]
     const att = new Map([['r', { status: 'recovery' }]])

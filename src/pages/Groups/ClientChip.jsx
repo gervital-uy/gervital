@@ -1,5 +1,6 @@
 import { useDraggable } from '@dnd-kit/core'
 import { Xmark, Check, RefreshDouble } from 'iconoir-react'
+import { dayTooltip } from '../../services/attendance/absenceModel'
 
 const COGNITIVE_LEVEL_COLORS = {
   A: 'bg-green-100 text-green-700',
@@ -9,7 +10,7 @@ const COGNITIVE_LEVEL_COLORS = {
 }
 
 // Chip shown when "Mostrar faltas" is on (read-only, not draggable).
-// Absence reasons are flattened: every absence reads as a plain "falta".
+// El chip siempre lee "falta"; el tipo y el motivo van en el tooltip.
 const ABSENCE_STYLE = { chip: 'bg-red-50 border-red-200', tag: 'bg-red-100 text-red-700', dot: 'bg-red-500', label: 'falta' }
 
 function RecoveryBadge() {
@@ -62,10 +63,13 @@ export function PoolClientChip({ client, assignedToAll, isRecovery }) {
   )
 }
 
-// Read-only chip for an absent client (not draggable)
+// Read-only chip for an absent client (not draggable).
+// `client.absence` es el attendance record del día (lo adjunta classifyDay).
 export function AbsenceClientChip({ client }) {
   const v = ABSENCE_STYLE
-  const tooltip = client.isJustified ? 'Falta justificada' : 'Falta no justificada'
+  const { absence } = client
+  const tip = dayTooltip('absent', absence?.isJustified, absence?.isChargeable, absence?.notes)
+  const tooltip = tip.reason ? `${tip.title}\n${tip.reason}` : tip.title
 
   return (
     <div

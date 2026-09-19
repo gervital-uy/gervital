@@ -1,6 +1,7 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { RefreshDouble } from 'iconoir-react'
+import { dayTooltip } from '../../services/attendance/absenceModel'
 
 const COLOR_SCHEMES = {
   '#ef4444': { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-800' },
@@ -36,9 +37,12 @@ function ChipContent({ client, color, isOverlay, noAddress, isRecovery }) {
 }
 
 // Read-only chip for an absent client (not draggable).
-// Absence reasons are flattened: every absence reads as a plain "falta".
+// El chip siempre lee "falta"; el tipo y el motivo van en el tooltip.
+// `client.absence` es el attendance record del día (lo adjunta classifyDay).
 export function AbsenceChip({ client }) {
-  const tooltip = client.isJustified ? 'Falta justificada' : 'Falta no justificada'
+  const { absence } = client
+  const tip = dayTooltip('absent', absence?.isJustified, absence?.isChargeable, absence?.notes)
+  const tooltip = tip.reason ? `${tip.title}\n${tip.reason}` : tip.title
 
   return (
     <div
