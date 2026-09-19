@@ -38,6 +38,7 @@ import {
 import { dayStyle, dayTooltip, outcomePreview } from '../../services/attendance/absenceModel'
 import { useAuth, roleHasAccess } from '../../context/AuthContext'
 import { useReasonLabels } from '../../hooks/useReasonLabels'
+import AbsenceChargeableChoice from './AbsenceChargeableChoice'
 import EmitInvoiceModal from './EmitInvoiceModal'
 import ApplyDiscountModal from './ApplyDiscountModal'
 import PrepaidPromoModal from './PrepaidPromoModal'
@@ -1301,11 +1302,11 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
         onClose={closeModal}
         date={selectedDate}
         isPaid={isPaid}
-        onConfirm={({ type, reason, range }) => {
+        onConfirm={({ type, isChargeable, reason, range }) => {
           const isJustified = type === 'justified'
           if (range)
-            return withProcessing(() => registerAbsenceRange(client.id, range.from, range.to, isJustified, user?.name, reason))
-          return withProcessing(() => registerAbsence(client.id, selectedDate, isJustified, user?.name, reason))
+            return withProcessing(() => registerAbsenceRange(client.id, range.from, range.to, isJustified, isChargeable, user?.name, reason))
+          return withProcessing(() => registerAbsence(client.id, selectedDate, isJustified, isChargeable, user?.name, reason))
         }}
       />
 
@@ -1557,6 +1558,7 @@ const JUSTIFIED_ABSENCE_REASONS = ['Vacaciones', 'Enfermo/a', 'Invierno', 'Cita 
 
 function AbsenceModal({ isOpen, onClose, date, isPaid, onConfirm }) {
   const [selected, setSelected] = useState(null) // null | 'justified' | 'unjustified'
+  const [isChargeable, setIsChargeable] = useState(true)
   const [reasonChoice, setReasonChoice] = useState(null) // preset label | 'Otro' | null
   const [otherText, setOtherText] = useState('')
   const [unjustifiedReason, setUnjustifiedReason] = useState('')
@@ -1568,7 +1570,7 @@ function AbsenceModal({ isOpen, onClose, date, isPaid, onConfirm }) {
 
   useEffect(() => {
     if (!isOpen) {
-      setSelected(null); setReasonChoice(null); setOtherText(''); setUnjustifiedReason('')
+      setSelected(null); setIsChargeable(true); setReasonChoice(null); setOtherText(''); setUnjustifiedReason('')
       setRangeOn(false); setFromDate(''); setToDate(''); setSubmitting(false); setError('')
     } else if (date) {
       setFromDate(date); setToDate(date)
@@ -1578,9 +1580,8 @@ function AbsenceModal({ isOpen, onClose, date, isPaid, onConfirm }) {
   const isJustified = selected === 'justified'
   const isOther = reasonChoice === 'Otro'
   const justifiedReason = isOther ? otherText.trim() : reasonChoice
-  const todayStr = format(new Date(), 'yyyy-MM-dd')
   const previewText = selected
-    ? outcomePreview({ isJustified: selected === 'justified', date, today: todayStr, monthPaid: !!isPaid })
+    ? outcomePreview({ isJustified: selected === 'justified', isChargeable })
     : null
   const reasonValid = isJustified ? !!justifiedReason : true
   const canConfirm = selected !== null && reasonValid && !(isJustified && rangeOn && (!fromDate || !toDate || fromDate > toDate))
@@ -1597,6 +1598,7 @@ function AbsenceModal({ isOpen, onClose, date, isPaid, onConfirm }) {
     try {
       await onConfirm({
         type: selected,
+        isChargeable,
         reason: isJustified ? justifiedReason : (unjustifiedReason.trim() || null),
         range: isJustified && rangeOn ? { from: fromDate, to: toDate } : null
       })
@@ -1623,7 +1625,7 @@ function AbsenceModal({ isOpen, onClose, date, isPaid, onConfirm }) {
             {isJustified && <Check className="w-4 h-4 text-orange-600" />}
             Justificada
           </p>
-          <p className="text-sm text-gray-500 mt-0.5">Puede o no cobrarse según la fecha y si el mes ya se cobró; genera recupero cuando se cobra.</p>
+          <p className="text-sm text-gray-500 mt-0.5">Elegí si se cobra (con recupero) o no se cobra.</p>
         </button>
         <button type="button" onClick={() => setSelected('unjustified')} disabled={submitting} className={unjustifiedClass}>
           <p className="font-medium text-gray-900 flex items-center gap-1.5">
@@ -1639,6 +1641,8 @@ function AbsenceModal({ isOpen, onClose, date, isPaid, onConfirm }) {
 
         {isJustified && (
           <>
+            <AbsenceChargeableChoice value={isChargeable} onChange={setIsChargeable} disabled={submitting} />
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Motivo</label>
               <div className="flex flex-wrap gap-2">
