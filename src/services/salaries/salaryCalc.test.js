@@ -1,6 +1,8 @@
 import {
   irpfFactor, nominalFromLiquido, monthlyCostBreakdown, monthlyCostToCompany,
-  currentSalary, extraordinarios12m, proyectarNominal
+  currentSalary, extraordinarios12m, proyectarNominal,
+  highestNominalAsOf, directorContributionAsOf, directorContributionPerDirector,
+  DIRECTORS_COUNT
 } from './salaryCalc'
 
 // Referencia manual de la fórmula, escrita aparte para que el test no repita
@@ -93,6 +95,80 @@ describe('currentSalary', () => {
   test('sin ajustes da null', () => {
     expect(currentSalary([])).toBeNull()
     expect(currentSalary(undefined)).toBeNull()
+  })
+
+  test('sin asOf incluye ajustes con vigencia futura (lo que muestra la ficha)', () => {
+    const adj = [
+      { liquido: 80, effectiveDate: '2026-01-01' },
+      { liquido: 95, effectiveDate: '2099-01-01' }
+    ]
+    expect(currentSalary(adj).liquido).toBe(95)
+  })
+
+  test('con asOf ignora los ajustes posteriores', () => {
+    const adj = [
+      { liquido: 80, effectiveDate: '2026-01-01' },
+      { liquido: 95, effectiveDate: '2026-10-01' }
+    ]
+    expect(currentSalary(adj, '2026-09-30').liquido).toBe(80)
+    expect(currentSalary(adj, '2026-10-31').liquido).toBe(95)
+  })
+
+  test('asOf incluye el ajuste que entra en vigencia ese mismo día', () => {
+    const adj = [{ liquido: 95, effectiveDate: '2026-09-30' }]
+    expect(currentSalary(adj, '2026-09-30').liquido).toBe(95)
+  })
+
+  test('asOf anterior a todos los ajustes da null', () => {
+    const adj = [{ liquido: 95, effectiveDate: '2026-10-01' }]
+    expect(currentSalary(adj, '2026-09-30')).toBeNull()
+  })
+})
+
+describe('highestNominalAsOf / directorContributionAsOf', () => {
+  const emp = (liquido, { active = true, hasIrpf = false, effectiveDate = '2026-01-01' } = {}) =>
+    ({ active, hasIrpf, adjustments: [{ liquido, effectiveDate }] })
+
+  test('toma el nominal más alto, no el líquido más alto', () => {
+    // 59251 con IRPF nominaliza por encima de 60000 sin IRPF.
+    const employees = [emp(60000), emp(59251, { hasIrpf: true })]
+    expect(highestNominalAsOf(employees, '2026-09-30')).toBeCloseTo(nominalFromLiquido(59251, true), 6)
+  })
+
+  test('ignora inactivos y empleados sin sueldo vigente a la fecha', () => {
+    const employees = [
+      emp(99999, { active: false }),
+      emp(88888, { effectiveDate: '2026-12-01' }),
+      emp(40000)
+    ]
+    expect(highestNominalAsOf(employees, '2026-09-30')).toBeCloseTo(nominalFromLiquido(40000, false), 6)
+  })
+
+  test('sin empleados elegibles da 0', () => {
+    expect(highestNominalAsOf([], '2026-09-30')).toBe(0)
+    expect(highestNominalAsOf(undefined, '2026-09-30')).toBe(0)
+    expect(directorContributionAsOf([], '2026-09-30')).toBe(0)
+  })
+
+  test('el aporte de un director es el nominal más alto por 0.226, redondeado', () => {
+    const employees = [emp(40000)]
+    const esperado = Math.round(nominalFromLiquido(40000, false) * (0.15 + 0.001 + 0.075))
+    expect(directorContributionPerDirector(employees, '2026-09-30')).toBe(esperado)
+    expect(Number.isInteger(directorContributionPerDirector(employees, '2026-09-30'))).toBe(true)
+  })
+
+  test('el aporte total es el de un director por la cantidad de directores', () => {
+    const employees = [emp(40000)]
+    expect(DIRECTORS_COUNT).toBe(2)
+    expect(directorContributionAsOf(employees, '2026-09-30'))
+      .toBe(directorContributionPerDirector(employees, '2026-09-30') * DIRECTORS_COUNT)
+  })
+
+  test('redondea por director, no sobre el total', () => {
+    // 75865.5569... × 0.226 = 17145.6158 → 17146 por director → 34292.
+    // Redondear el total daría 34291: un peso menos.
+    const employees = [emp(59251, { hasIrpf: true })]
+    expect(directorContributionAsOf(employees, '2026-09-30')).toBe(34292)
   })
 })
 

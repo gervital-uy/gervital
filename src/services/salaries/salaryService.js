@@ -1,4 +1,6 @@
 import { supabase } from '../supabase/client'
+import { getSetting } from '../settings/appSettingsService'
+import { pendingContributions, DIRECTOR_SYSTEM_KEY, monthKey } from './directorContribution'
 
 // Tipos discretos para gastos extraordinarios de empleado.
 export const EXTRA_COST_TYPES = [
@@ -36,6 +38,8 @@ function mapExtraCost(row) {
     concept: row.concept,
     amount: Number(row.amount),
     date: row.date,
+    systemKey: row.system_key || null,
+    overriddenAt: row.overridden_at || null,
     createdAt: row.created_at
   }
 }
@@ -176,8 +180,67 @@ export async function addExtraCost(input) {
   if (error) throw new Error(error.message)
 }
 
+/**
+ * Pisar a mano el monto de un extraordinario. Si la fila la había generado el
+ * sistema queda marcada como editada: no se recalcula igual (una fila creada no
+ * se toca nunca), pero el cartel de la UI pasa a "editado a mano" para que se
+ * entienda por qué ese mes no cuadra con la fórmula.
+ * @param {string} id
+ * @param {{amount:number}} input
+ */
+export async function updateExtraCost(id, { amount }) {
+  const { error } = await supabase
+    .from('employee_extra_costs')
+    .update({ amount, overridden_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
 /** Delete an extra cost. */
 export async function deleteExtraCost(id) {
   const { error } = await supabase.from('employee_extra_costs').delete().eq('id', id)
   if (error) throw new Error(error.message)
+}
+
+/**
+ * Self-heal del aporte jubilatorio de directores: crea la fila de cada mes que
+ * falte entre el mes ancla y el corriente. No hay cron en el proyecto, así que
+ * corre al abrir Costos — que es superadmin, igual que la RLS de la tabla.
+ *
+ * Solo inserta. Una fila ya creada se queda con el monto que se congeló ese
+ * mes; subir un sueldo hoy no reescribe meses pasados.
+ *
+ * Best-effort por diseño: si falla (índice único por una carrera entre dos
+ * pestañas, permisos, red) no rompe la carga de Costos.
+ *
+ * @param {Array} employees - lista de getEmployees()
+ * @param {{year:number, month:number}} current - mes corriente (month 0-indexed)
+ * @returns {Promise<number>} filas creadas
+ */
+export async function ensureDirectorContributions(employees, current) {
+  const startKey = await getSetting('director_contribution_start')
+  if (!startKey) return 0
+
+  const currentKey = monthKey(current.year, current.month)
+  const { data, error } = await supabase
+    .from('employee_extra_costs')
+    .select('date')
+    .eq('system_key', DIRECTOR_SYSTEM_KEY)
+  if (error) throw new Error(error.message)
+
+  const rows = pendingContributions({ startKey, currentKey, existing: data || [], employees })
+  if (rows.length === 0) return 0
+
+  const { error: insertError } = await supabase.from('employee_extra_costs').insert(
+    rows.map(r => ({
+      employee_id: null,
+      type: null,
+      concept: r.concept,
+      amount: r.amount,
+      date: r.date,
+      system_key: r.systemKey
+    }))
+  )
+  if (insertError) throw new Error(insertError.message)
+  return rows.length
 }

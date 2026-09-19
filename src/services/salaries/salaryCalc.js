@@ -68,12 +68,22 @@ export function monthlyCostToCompany(liquido, hasIrpf) {
 
 /**
  * Sueldo vigente = el ajuste con effectiveDate más alta (desempate por createdAt).
+ *
+ * Con `asOf` se limita a los ajustes ya vigentes a esa fecha, que es lo que
+ * necesita el aporte de directores: el monto de cada mes se congela con el
+ * nominal que regía ESE mes, no con el de hoy. Sin `asOf` se comporta como
+ * siempre — incluye ajustes con fecha futura, que es lo que la ficha del
+ * empleado quiere mostrar.
+ *
  * @param {Array<{liquido:number, effectiveDate:string, createdAt?:string}>} adjustments
+ * @param {string} [asOf] - 'YYYY-MM-DD'; ignora ajustes posteriores
  * @returns {{liquido:number, effectiveDate:string}|null}
  */
-export function currentSalary(adjustments) {
+export function currentSalary(adjustments, asOf) {
   if (!adjustments || adjustments.length === 0) return null
-  const sorted = [...adjustments].sort((a, b) => {
+  const eligible = asOf ? adjustments.filter(a => a.effectiveDate <= asOf) : adjustments
+  if (eligible.length === 0) return null
+  const sorted = [...eligible].sort((a, b) => {
     if (a.effectiveDate !== b.effectiveDate) return a.effectiveDate < b.effectiveDate ? 1 : -1
     const aCA = a.createdAt || '', bCA = b.createdAt || ''
     if (aCA !== bCA) return aCA < bCA ? 1 : -1
@@ -102,6 +112,62 @@ export function extraordinarios12m(extraCosts, asOf) {
       return d && d > cutoff && d <= ref
     })
     .reduce((sum, x) => sum + (Number(x.amount) || 0), 0)
+}
+
+// Aporte jubilatorio de directores (en la factura de BPS): se calcula sobre el
+// sueldo nominal más alto de la empresa. No sale de APORTES_PATRONALES: es otra
+// mezcla de tasas, propia del aporte de directores.
+export const DIRECTOR_CONTRIBUTION_RATE = 0.15 + 0.001 + 0.075
+
+// Cada director aporta por su cuenta sobre la misma base. Constante y no
+// setting: cambia sólo si cambia la composición de la sociedad, y en ese caso
+// se toca acá en una línea.
+export const DIRECTORS_COUNT = 2
+
+/**
+ * Nominal más alto vigente al cierre de un mes, entre los empleados activos.
+ *
+ * El sueldo se resuelve as-of el mes (currentSalary con asOf), así que un
+ * ajuste con vigencia posterior no infla un mes anterior. La actividad, en
+ * cambio, se lee de `active`: la tabla no guarda fecha de baja, así que para un
+ * mes pasado se asume la actividad de hoy.
+ *
+ * @param {Array<{active:boolean, hasIrpf:boolean, adjustments:Array}>} employees
+ * @param {string} monthEnd - 'YYYY-MM-DD', último día del mes
+ * @returns {number} 0 si no hay ningún empleado activo con sueldo vigente
+ */
+export function highestNominalAsOf(employees, monthEnd) {
+  if (!employees || employees.length === 0) return 0
+  return employees.reduce((max, e) => {
+    if (!e.active) return max
+    const salary = currentSalary(e.adjustments, monthEnd)
+    if (!salary) return max
+    return Math.max(max, nominalFromLiquido(salary.liquido, e.hasIrpf))
+  }, 0)
+}
+
+/**
+ * Aporte de UN director en un mes: nominal más alto de ese mes por la tasa,
+ * redondeado a peso.
+ * @param {Array} employees
+ * @param {string} monthEnd - 'YYYY-MM-DD', último día del mes
+ * @returns {number}
+ */
+export function directorContributionPerDirector(employees, monthEnd) {
+  return Math.round(highestNominalAsOf(employees, monthEnd) * DIRECTOR_CONTRIBUTION_RATE)
+}
+
+/**
+ * Aporte jubilatorio de directores de un mes: el aporte de un director por la
+ * cantidad de directores. Se redondea por director y después se multiplica —
+ * cada uno aporta su propia línea en la factura de BPS — y no al revés, que
+ * daría un peso de diferencia.
+ * @param {Array} employees
+ * @param {string} monthEnd - 'YYYY-MM-DD', último día del mes
+ * @returns {number}
+ */
+export function directorContributionAsOf(employees, monthEnd) {
+  return directorContributionPerDirector(employees, monthEnd) * DIRECTORS_COUNT
 }
 
 // Proyección: aplica el % semestral compuesto sobre N semestres.

@@ -218,7 +218,9 @@ export {
   updateSalaryAdjustment,
   deleteSalaryAdjustment,
   addExtraCost,
-  deleteExtraCost
+  updateExtraCost,
+  deleteExtraCost,
+  ensureDirectorContributions
 } from './salaries/salaryService'
 
 export {
