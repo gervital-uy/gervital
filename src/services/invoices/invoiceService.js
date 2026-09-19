@@ -1,4 +1,5 @@
 import { supabase } from '../supabase/client'
+import { keepCorrectionNotes } from './billingCorrection'
 
 /**
  * Ensure monthly_invoice rows exist from client.start_date → now+6mo
@@ -73,7 +74,8 @@ export async function getClientInvoices(clientId) {
     paidDate: inv.paidDate,
     paidAmount: inv.paidAmount ? Number(inv.paidAmount) : null,
     paymentMethod: inv.paymentMethod,
-    paymentNotes: inv.paymentNotes
+    paymentNotes: inv.paymentNotes,
+    correctionPending: !!inv.correctionPending
   }))
 }
 
@@ -174,6 +176,20 @@ export async function markMonthInvoiced(clientId, year, month, invoiceNumber, in
  * @param {number} month - 0-indexed
  */
 export async function unmarkMonthPaid(clientId, year, month) {
+  // Las líneas de corrección son el único rastro de lo REALMENTE recibido (la
+  // corrección pisa paid_amount a propósito). Borrar payment_notes entero las
+  // perdería, así que se conservan y se descartan sólo las notas de cobro.
+  const { data: current, error: readError } = await supabase
+    .from('monthly_invoices')
+    .select('payment_notes')
+    .eq('client_id', clientId)
+    .eq('year', year)
+    .eq('month', month)
+    .maybeSingle()
+  if (readError) throw new Error(readError.message)
+
+  const preservedNotes = keepCorrectionNotes(current?.payment_notes)
+
   const { error } = await supabase
     .from('monthly_invoices')
     .update({
@@ -182,9 +198,12 @@ export async function unmarkMonthPaid(clientId, year, month) {
       paid_date: null,
       paid_amount: null,
       payment_method: null,
-      payment_notes: null,
+      payment_notes: preservedNotes,
       is_amount_overridden: false,
       original_chargeable_amount: null,
+      // Sin monto cobrado no hay nada que corregir, y apply_month_billing_correction
+      // rechaza el mes: dejarlo prendido sería un flag que nadie puede apagar.
+      correction_pending: false,
       updated_at: new Date().toISOString()
     })
     .eq('client_id', clientId)
@@ -223,4 +242,41 @@ export async function applyPlanDiscount(clientId, startYear, startMonth, endYear
  */
 export async function removePlanDiscount(clientId, startYear, startMonth, endYear, endMonth) {
   return applyPlanDiscount(clientId, startYear, startMonth, endYear, endMonth, 0)
+}
+
+/**
+ * Reescribe el monto cobrado de un mes con lo que corresponde según la
+ * asistencia actual. El monto lo recalcula el servidor, no se manda desde acá.
+ * @param {string} clientId
+ * @param {number} year
+ * @param {number} month - 0-indexed
+ * @param {string} userName
+ * @returns {Promise<{success: boolean, previousAmount: number, newAmount: number}>}
+ */
+export async function applyMonthBillingCorrection(clientId, year, month, userName) {
+  const { data, error } = await supabase.rpc('apply_month_billing_correction', {
+    p_client_id: clientId,
+    p_year: year,
+    p_month: month,
+    p_created_by: userName
+  })
+  if (error) throw new Error(error.message)
+  if (!data.success) throw new Error(data.error || 'Error al corregir el cobro')
+  return data
+}
+
+/**
+ * Marca el mes como "requiere corrección" (el usuario canceló el modal).
+ * @param {string} clientId
+ * @param {number} year
+ * @param {number} month - 0-indexed
+ */
+export async function flagMonthCorrectionPending(clientId, year, month) {
+  const { data, error } = await supabase.rpc('flag_month_correction_pending', {
+    p_client_id: clientId,
+    p_year: year,
+    p_month: month
+  })
+  if (error) throw new Error(error.message)
+  if (!data.success) throw new Error(data.error || 'Error al marcar la corrección')
 }

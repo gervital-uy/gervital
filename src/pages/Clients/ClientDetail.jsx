@@ -36,11 +36,14 @@ import {
   getClientFollowups
 } from '../../services/api'
 import { dayStyle, dayTooltip, outcomePreview } from '../../services/attendance/absenceModel'
+import { shouldPromptCorrection, monthsInRange } from '../../services/invoices/billingCorrection'
 import { useAuth, roleHasAccess } from '../../context/AuthContext'
 import { useReasonLabels } from '../../hooks/useReasonLabels'
+import AbsenceChargeableChoice from './AbsenceChargeableChoice'
 import EmitInvoiceModal from './EmitInvoiceModal'
 import ApplyDiscountModal from './ApplyDiscountModal'
 import PrepaidPromoModal from './PrepaidPromoModal'
+import MonthBillingCorrectionModal from './MonthBillingCorrectionModal'
 import Button from '../../components/ui/Button'
 import Card, { CardContent, CardHeader } from '../../components/ui/Card'
 import Tabs from '../../components/ui/Tabs'
@@ -805,7 +808,9 @@ export default function ClientDetail() {
           Asistencia y facturación
         </h2>
         <p className="text-sm text-gray-500 mt-1">
-          Desliza para ver todos los meses. Haz clic en un día para registrar ausencias o faltas justificadas.
+          {roleHasAccess(user?.role, 'attendance_edit')
+            ? 'Desliza para ver todos los meses. Haz clic en un día para registrar una falta o un recupero.'
+            : 'Desliza para ver todos los meses. El calendario es de solo lectura para tu rol.'}
         </p>
       </div>
 
@@ -837,6 +842,7 @@ export default function ClientDetail() {
               year={d.getFullYear()}
               month={d.getMonth()}
               invoice={null}
+              allInvoices={invoices}
               attendance={attendance}
               pricingData={pricingData}
               transportPricingData={transportPricingData}
@@ -852,6 +858,7 @@ export default function ClientDetail() {
               year={inv.year}
               month={inv.month}
               invoice={inv}
+              allInvoices={invoices}
               attendance={attendance}
               pricingData={pricingData}
               transportPricingData={transportPricingData}
@@ -878,11 +885,12 @@ export default function ClientDetail() {
         loading={reactivating}
       />
 
+      {/* Agregar/revocar créditos mueve plata igual que una falta: mismo gate. */}
       <RecoveryCreditsModal
         isOpen={recoveryModalOpen}
         onClose={() => setRecoveryModalOpen(false)}
         credits={recoveryCredits}
-        canMutate={!client.deletedAt}
+        canMutate={!client.deletedAt && roleHasAccess(user?.role, 'attendance_edit')}
         userName={user?.name}
         clientId={id}
         onChanged={refreshRecovery}
@@ -910,7 +918,7 @@ export default function ClientDetail() {
 // ============================================================
 // MonthCard
 // ============================================================
-function MonthCard({ client, year, month, invoice, attendance, pricingData, transportPricingData, user, onRefresh }) {
+function MonthCard({ client, year, month, invoice, allInvoices, attendance, pricingData, transportPricingData, user, onRefresh }) {
   const [processing, setProcessing] = useState(false)
   // Modal state: null | 'payment' | 'undoPayment' | 'invoice' | 'absence' | 'undoAbsence' | 'recovery' | 'undoRecovery'
   const [modal, setModal] = useState(null)
@@ -918,6 +926,7 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
   const [selectedRecord, setSelectedRecord] = useState(null)
   const [paymentDropOpen, setPaymentDropOpen] = useState(false)
   const [emitModalOpen, setEmitModalOpen] = useState(false)
+  const [correctionMonths, setCorrectionMonths] = useState([])
   const paymentDropRef = useRef(null)
   const isDeactivated = !!client.deletedAt
 
@@ -950,6 +959,9 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
   const isPaid = invoice?.paymentStatus === 'paid'
   const isInvoiced = invoice?.invoiceStatus === 'invoiced'
   const canViewBilling = roleHasAccess(user?.role, 'billing') && !client?.isNonBillable
+  // El operador lee el calendario (lo necesita para coordinar Grupos y
+  // Transporte) pero no lo edita: registrar una falta mueve plata.
+  const canEditAttendance = roleHasAccess(user?.role, 'attendance_edit')
   // Overdue: unpaid and past the 11th of the invoice's month
   const dueDate = new Date(year, month, 11, 23, 59, 59)
   const isOverdue = !isPaid && today > dueDate
@@ -1032,7 +1044,7 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
   }
 
   const handleDayClick = (day) => {
-    if (isDeactivated) return
+    if (isDeactivated || !canEditAttendance) return
     const dateStr = format(day, 'yyyy-MM-dd')
     const { status, isJustified, isChargeable, isAssigned } = getDayStatus(day)
     const isWeekend = getDay(day) === 0 || getDay(day) === 6
@@ -1056,22 +1068,75 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
 
   const closeModal = () => { setModal(null); setSelectedDate(null); setSelectedRecord(null) }
 
-  const withProcessing = async (fn) => {
+  // Después de tocar la asistencia, ver qué meses pagos quedaron descuadrados.
+  // Solo para MOSTRAR la diferencia: el monto que se persiste lo recalcula la RPC.
+  const detectCorrections = async (months = [{ year, month }]) => {
+    const found = []
+    for (const m of months) {
+      const inv = allInvoices.find(i => i.year === m.year && i.month === m.month)
+      if (!inv || inv.paymentStatus !== 'paid') continue
+      try {
+        const billing = await calculateMonthBilling(client.id, m.year, m.month)
+        const prompt = shouldPromptCorrection({
+          isPaid: true,
+          paidAmount: inv.paidAmount,
+          recalculatedAmount: billing.chargeableAmount,
+          isAmountOverridden: inv.isAmountOverridden
+        })
+        if (prompt) {
+          found.push({
+            year: m.year,
+            month: m.month,
+            paidAmount: inv.paidAmount,
+            recalculatedAmount: billing.chargeableAmount,
+            invoiceStatus: inv.invoiceStatus
+          })
+        }
+      } catch (e) {
+        console.error('No se pudo verificar el cobro de un mes:', e)
+      }
+    }
+    if (found.length) setCorrectionMonths(found)
+  }
+
+  // Cierra el modal SOLO si salió todo bien, y propaga el error para que el modal
+  // que llamó lo muestre y quede abierto. Tragárselo hacía que "Sin permisos"
+  // (error real desde que las RPC chequean rol) pareciera una operación exitosa.
+  const withProcessing = async (fn, months) => {
     setProcessing(true)
     try {
       await fn()
+      await detectCorrections(months)
       await onRefresh()
+      closeModal()
     } catch (err) {
       console.error(err)
+      throw err
     } finally {
       setProcessing(false)
-      closeModal()
     }
+  }
+
+  // El badge recalcula contra el servidor: liveChargeableAmount es una estimación
+  // local y lo que el modal muestra como "corresponde" tiene que ser el monto real.
+  const handleOpenCorrection = async () => {
+    try {
+      const billing = await calculateMonthBilling(client.id, year, month)
+      setCorrectionMonths([{
+        year,
+        month,
+        paidAmount: invoice.paidAmount,
+        recalculatedAmount: billing.chargeableAmount,
+        invoiceStatus: invoice.invoiceStatus
+      }])
+    } catch (e) { window.alert(e.message) }
   }
 
   const handleUndoPayment = async () => {
     setPaymentDropOpen(false)
-    await withProcessing(() => unmarkMonthPaid(client.id, year, month))
+    // No sale de un modal con lugar para el error: se muestra suelto.
+    try { await withProcessing(() => unmarkMonthPaid(client.id, year, month)) }
+    catch (e) { window.alert(e.message) }
   }
 
   const canRemoveDiscount = invoice?.paymentStatus === 'pending' && invoice?.invoiceStatus === 'pending'
@@ -1101,6 +1166,15 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
                   </button>
                 )}
               </span>
+            )}
+            {canViewBilling && isPaid && invoice?.correctionPending && (
+              <button
+                type="button"
+                onClick={handleOpenCorrection}
+                className="ml-2 px-2 py-0.5 rounded-lg text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 align-middle"
+              >
+                requiere corrección
+              </button>
             )}
           </h3>
 
@@ -1209,7 +1283,7 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
               const isStartDate = format(day, 'yyyy-MM-dd') === format(clientStart, 'yyyy-MM-dd')
               // Every weekday (Mon-Fri) is clickable. Recovery still requires an
               // available credit, but that is enforced inside the recovery modal.
-              const canClick = !isWeekend && !isDeactivated && (
+              const canClick = !isWeekend && !isDeactivated && canEditAttendance && (
                 isAssigned ||
                 status === 'recovery' ||
                 status === 'not_scheduled'
@@ -1218,11 +1292,12 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
               const colorClass = isWeekend
                 ? 'text-gray-300'
                 : status === 'not_scheduled'
-                  ? 'bg-gray-50 text-gray-400 border border-dashed border-gray-200 hover:bg-blue-50 hover:text-blue-500'
+                  ? `bg-gray-50 text-gray-400 border border-dashed border-gray-200${canClick ? ' hover:bg-blue-50 hover:text-blue-500' : ''}`
                   : dayStyle(status, isJustified, isChargeable)
 
               const tip = dayTooltip(status, isJustified, isChargeable, notes)
-              const isRecoverable = status === 'not_scheduled' && !isWeekend
+              // Sin permisos (o cliente de baja) el día no se puede recuperar: no prometerlo.
+              const isRecoverable = status === 'not_scheduled' && !isWeekend && canClick
               const nativeTitle = isStartDate
                 ? 'Primer día'
                 : isRecoverable
@@ -1301,11 +1376,14 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
         onClose={closeModal}
         date={selectedDate}
         isPaid={isPaid}
-        onConfirm={({ type, reason, range }) => {
+        onConfirm={({ type, isChargeable, reason, range }) => {
           const isJustified = type === 'justified'
           if (range)
-            return withProcessing(() => registerAbsenceRange(client.id, range.from, range.to, isJustified, user?.name, reason))
-          return withProcessing(() => registerAbsence(client.id, selectedDate, isJustified, user?.name, reason))
+            return withProcessing(
+              () => registerAbsenceRange(client.id, range.from, range.to, isJustified, isChargeable, user?.name, reason),
+              monthsInRange(range.from, range.to)
+            )
+          return withProcessing(() => registerAbsence(client.id, selectedDate, isJustified, isChargeable, user?.name, reason))
         }}
       />
 
@@ -1350,6 +1428,16 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
           withProcessing(() => unmarkDayRecoveryAttended(client.id, selectedDate, user?.name))
         }
         loading={processing}
+      />
+
+      {/* ── MonthBillingCorrectionModal (mes ya pago que quedó descuadrado) ── */}
+      <MonthBillingCorrectionModal
+        isOpen={correctionMonths.length > 0}
+        onClose={() => setCorrectionMonths([])}
+        months={correctionMonths}
+        clientId={client.id}
+        userName={user?.name}
+        onDone={onRefresh}
       />
     </>
   )
@@ -1557,6 +1645,7 @@ const JUSTIFIED_ABSENCE_REASONS = ['Vacaciones', 'Enfermo/a', 'Invierno', 'Cita 
 
 function AbsenceModal({ isOpen, onClose, date, isPaid, onConfirm }) {
   const [selected, setSelected] = useState(null) // null | 'justified' | 'unjustified'
+  const [isChargeable, setIsChargeable] = useState(true)
   const [reasonChoice, setReasonChoice] = useState(null) // preset label | 'Otro' | null
   const [otherText, setOtherText] = useState('')
   const [unjustifiedReason, setUnjustifiedReason] = useState('')
@@ -1568,7 +1657,7 @@ function AbsenceModal({ isOpen, onClose, date, isPaid, onConfirm }) {
 
   useEffect(() => {
     if (!isOpen) {
-      setSelected(null); setReasonChoice(null); setOtherText(''); setUnjustifiedReason('')
+      setSelected(null); setIsChargeable(true); setReasonChoice(null); setOtherText(''); setUnjustifiedReason('')
       setRangeOn(false); setFromDate(''); setToDate(''); setSubmitting(false); setError('')
     } else if (date) {
       setFromDate(date); setToDate(date)
@@ -1578,9 +1667,8 @@ function AbsenceModal({ isOpen, onClose, date, isPaid, onConfirm }) {
   const isJustified = selected === 'justified'
   const isOther = reasonChoice === 'Otro'
   const justifiedReason = isOther ? otherText.trim() : reasonChoice
-  const todayStr = format(new Date(), 'yyyy-MM-dd')
   const previewText = selected
-    ? outcomePreview({ isJustified: selected === 'justified', date, today: todayStr, monthPaid: !!isPaid })
+    ? outcomePreview({ isJustified: selected === 'justified', isChargeable })
     : null
   const reasonValid = isJustified ? !!justifiedReason : true
   const canConfirm = selected !== null && reasonValid && !(isJustified && rangeOn && (!fromDate || !toDate || fromDate > toDate))
@@ -1597,6 +1685,7 @@ function AbsenceModal({ isOpen, onClose, date, isPaid, onConfirm }) {
     try {
       await onConfirm({
         type: selected,
+        isChargeable,
         reason: isJustified ? justifiedReason : (unjustifiedReason.trim() || null),
         range: isJustified && rangeOn ? { from: fromDate, to: toDate } : null
       })
@@ -1623,7 +1712,7 @@ function AbsenceModal({ isOpen, onClose, date, isPaid, onConfirm }) {
             {isJustified && <Check className="w-4 h-4 text-orange-600" />}
             Justificada
           </p>
-          <p className="text-sm text-gray-500 mt-0.5">Puede o no cobrarse según la fecha y si el mes ya se cobró; genera recupero cuando se cobra.</p>
+          <p className="text-sm text-gray-500 mt-0.5">Elegí si se cobra (con recupero) o no se cobra.</p>
         </button>
         <button type="button" onClick={() => setSelected('unjustified')} disabled={submitting} className={unjustifiedClass}>
           <p className="font-medium text-gray-900 flex items-center gap-1.5">
@@ -1639,6 +1728,8 @@ function AbsenceModal({ isOpen, onClose, date, isPaid, onConfirm }) {
 
         {isJustified && (
           <>
+            <AbsenceChargeableChoice value={isChargeable} onChange={setIsChargeable} disabled={submitting} />
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Motivo</label>
               <div className="flex flex-wrap gap-2">
@@ -1732,14 +1823,26 @@ function AbsenceModal({ isOpen, onClose, date, isPaid, onConfirm }) {
 // ConfirmModal (generic)
 // ============================================================
 function ConfirmModal({ isOpen, onClose, title, message, confirmLabel, confirmClass, onConfirm, loading, confirmDisabled }) {
+  const [error, setError] = useState('')
+
+  useEffect(() => { if (!isOpen) setError('') }, [isOpen])
+
+  // El padre cierra el modal al salir bien; si falla, queda abierto con el error.
+  const handleConfirm = async () => {
+    setError('')
+    try { await onConfirm() }
+    catch (e) { setError(e.message) }
+  }
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title}>
       <div className="space-y-4">
         <p className="text-gray-600 text-sm">{message}</p>
+        {error && <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{error}</div>}
         <div className="flex gap-3 justify-end pt-2 border-t border-gray-200">
           <Button variant="secondary" onClick={onClose}>{confirmDisabled ? 'Cerrar' : 'Cancelar'}</Button>
           {!confirmDisabled && (
-            <Button onClick={onConfirm} loading={loading} className={confirmClass}>
+            <Button onClick={handleConfirm} loading={loading} className={confirmClass}>
               {confirmLabel}
             </Button>
           )}

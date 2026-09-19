@@ -1,26 +1,30 @@
 import { deriveAbsence, dayStyle, dayTooltip, outcomePreview } from './absenceModel'
 
-const TODAY = '2026-07-20'
-
 describe('deriveAbsence', () => {
-  test('injustificada (futuro, impago) → cobrable, sin crédito', () => {
-    expect(deriveAbsence({ isJustified: false, date: '2026-08-01', today: TODAY, monthPaid: false }))
+  test('injustificada: siempre cobrable, nunca crédito', () => {
+    expect(deriveAbsence({ isJustified: false, isChargeable: true }))
       .toEqual({ status: 'absent', isJustified: false, isChargeable: true, generatesCredit: false })
   })
-  test('justificada hoy (impago) → cobrable, +crédito', () => {
-    expect(deriveAbsence({ isJustified: true, date: TODAY, today: TODAY, monthPaid: false }))
+
+  test('injustificada ignora isChargeable=false: el día se cobra igual', () => {
+    expect(deriveAbsence({ isJustified: false, isChargeable: false }))
+      .toEqual({ status: 'absent', isJustified: false, isChargeable: true, generatesCredit: false })
+  })
+
+  test('justificada cobrable: +1 crédito', () => {
+    expect(deriveAbsence({ isJustified: true, isChargeable: true }))
       .toEqual({ status: 'absent', isJustified: true, isChargeable: true, generatesCredit: true })
   })
-  test('justificada pasado (impago) → cobrable, +crédito', () => {
-    expect(deriveAbsence({ isJustified: true, date: '2026-07-10', today: TODAY, monthPaid: false }).generatesCredit).toBe(true)
-  })
-  test('justificada futuro + mes pago → cobrable, +crédito', () => {
-    expect(deriveAbsence({ isJustified: true, date: '2026-08-01', today: TODAY, monthPaid: true }))
-      .toEqual({ status: 'absent', isJustified: true, isChargeable: true, generatesCredit: true })
-  })
-  test('justificada futuro + mes NO pago → no cobrable, sin crédito', () => {
-    expect(deriveAbsence({ isJustified: true, date: '2026-08-01', today: TODAY, monthPaid: false }))
+
+  test('justificada no cobrable: sin crédito', () => {
+    expect(deriveAbsence({ isJustified: true, isChargeable: false }))
       .toEqual({ status: 'absent', isJustified: true, isChargeable: false, generatesCredit: false })
+  })
+
+  test('el crédito sale sii justificada y cobrable', () => {
+    const credito = (j, c) => deriveAbsence({ isJustified: j, isChargeable: c }).generatesCredit
+    expect([credito(true, true), credito(true, false), credito(false, true), credito(false, false)])
+      .toEqual([true, false, false, false])
   })
 })
 
@@ -58,15 +62,17 @@ describe('dayTooltip', () => {
 
 describe('outcomePreview', () => {
   test('injustificada', () => {
-    expect(outcomePreview({ isJustified: false, date: TODAY, today: TODAY, monthPaid: false }))
+    expect(outcomePreview({ isJustified: false, isChargeable: true }))
       .toBe('Se cobra el día igual. Sin crédito de recupero.')
   })
-  test('justificada con crédito', () => {
-    expect(outcomePreview({ isJustified: true, date: TODAY, today: TODAY, monthPaid: false }))
+
+  test('justificada cobrable', () => {
+    expect(outcomePreview({ isJustified: true, isChargeable: true }))
       .toBe('Se cobra el día y se acredita 1 día de recupero.')
   })
-  test('justificada sin crédito (futuro impago)', () => {
-    expect(outcomePreview({ isJustified: true, date: '2026-08-01', today: TODAY, monthPaid: false }))
+
+  test('justificada no cobrable', () => {
+    expect(outcomePreview({ isJustified: true, isChargeable: false }))
       .toBe('No se cobra el día (sin recupero).')
   })
 })

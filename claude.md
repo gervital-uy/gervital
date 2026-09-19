@@ -140,21 +140,36 @@ src/services/
   clientId: string,
   date: string,               // YYYY-MM-DD
   shift: 'morning' | 'afternoon' | 'full_day',
-  status: 'attended' | 'unjustified_absence' | 'justified_recovered' | 
-          'justified_not_recovered' | 'recovered' | 'scheduled',
+  status: 'attended' | 'absent' | 'recovery' | 'scheduled',
+  isJustified: boolean | null,   // solo tiene sentido cuando status = 'absent'
+  isChargeable: boolean,
   notes: string
 }
 ```
 
 ### Estados de Asistencia
-| Estado | Descripción | ¿Se cobra? | Efecto en recupero |
-|--------|-------------|------------|-------------------|
-| `attended` | Asistió normalmente | ✅ Sí | - |
-| `unjustified_absence` | Falta no justificada | ✅ Sí | - |
-| `justified_recovered` | Falta justificada con recupero | ✅ Sí | +1 día recupero |
-| `justified_not_recovered` | Falta justificada sin recupero | ❌ No | - |
-| `recovered` | Usó un día de recupero | ✅ Sí | -1 día recupero |
-| `scheduled` | Día programado (futuro) | - | - |
+
+Modelo unificado de faltas (migración 068): toda falta es `status = 'absent'`, descrita por
+los booleanos `is_justified` e `is_chargeable` — **reemplazó** al enum viejo
+(`unjustified_absence`, `justified_recovered`, `justified_not_recovered`, `recovered`). No
+escribir código nuevo contra esos valores: ya no existen como `status`.
+
+| `status` | `is_justified` | `is_chargeable` | Descripción | ¿Se cobra? | Efecto en recupero |
+|---|---|---|---|---|---|
+| `scheduled` | `null` | `true` | Día planificado a futuro, todavía no ocurrió | - | - |
+| `attended` | `null` | `true` | Asistió (incluye días pasados sin falta registrada) | ✅ Sí | - |
+| `absent` | `false` | `true` | Falta no justificada | ✅ Sí | - |
+| `absent` | `true` | `true` | Falta justificada y cobrable | ✅ Sí | +1 crédito de recupero |
+| `absent` | `true` | `false` | Falta justificada y no cobrable | ❌ No | - |
+| `recovery` | `null` | `true` | Usó un crédito de recupero | ✅ Sí | -1 crédito de recupero |
+
+Regla del recupero: se otorga **sii** justificada ∧ cobrable (`is_justified = true AND
+is_chargeable = true`).
+
+`is_chargeable` en una falta justificada (`absent` + `is_justified = true`) ya **no se
+deriva de la fecha** (antes: una falta justificada futura en un mes no pago se marcaba
+automáticamente como no cobrable). Ahora lo **elige el usuario** en el modal de falta, y el
+default es **siempre** "cobrable + recupero", sin importar el mes.
 
 ### MonthlyInvoice (Factura mensual)
 ```javascript
@@ -276,8 +291,8 @@ const monthlyPrice = calculatePlanPrice(frequency, schedule)
 // Días planificados en el mes
 const plannedDays = getPlannedDaysForMonth(clientId, year, month)
 
-// Días cobrables (excluye justified_not_recovered)
-const chargeableDays = plannedDays.filter(d => d.status !== 'justified_not_recovered')
+// Días cobrables (excluye las faltas marcadas como no cobrables)
+const chargeableDays = plannedDays.filter(d => !(d.status === 'absent' && !d.isChargeable))
 
 // Monto a cobrar
 const chargeableAmount = (chargeableDays.length / plannedDays.length) * monthlyPrice
@@ -406,13 +421,19 @@ haberlo.
 Tres roles: `operador` < `admin` < `superadmin`. Fuente de verdad en frontend:
 `FEATURE_ROLES` en `src/context/AuthContext.jsx` (feature → roles), expuesta vía
 `hasAccess(feature)` y el helper puro `roleHasAccess(role, feature)`. Reforzado en
-backend con RLS (helper `is_admin_or_superadmin()`, migración 020).
+backend con RLS (helper `is_admin_or_superadmin()`, migración 020). Las RPC de asistencia
+(`register_absence`, `register_absence_range`, `unregister_absence`,
+`mark_day_recovery_attended`) son `SECURITY DEFINER` y saltean la RLS, así que llevan la
+misma guarda `is_admin_or_superadmin()` adentro (migración 084).
 
-Features: `clients`, `costs`, `billing`, `salaries`, `dashboard_financials`, `users`.
+Features: `clients`, `costs`, `billing`, `attendance_edit`, `salaries`, `dashboard_financials`, `users`.
 
 ### Operador
 - ✅ Clientes, grupos, transporte (operación y coordinación)
-- ✅ Calendario de asistencia (ver y editar)
+- ✅ Calendario de asistencia (**solo lectura** — feature `attendance_edit`): lo sigue viendo
+  para coordinar Grupos y Transporte, pero no puede registrar/deshacer faltas ni marcar
+  recuperos
+- ❌ Registrar/deshacer faltas y marcar recuperos: mueve plata
 - ✅ Seguimiento de bajas
 - ❌ Costos: gastos y proveedores (feature `costs`, migración 077) — ni ver ni ingresar
 - ❌ Precios, montos, facturación y cobranza (header del detalle de cliente)
@@ -420,6 +441,8 @@ Features: `clients`, `costs`, `billing`, `salaries`, `dashboard_financials`, `us
 
 ### Admin
 - ✅ Todo lo del operador
+- ✅ Calendario de asistencia editable (feature `attendance_edit`): registrar/deshacer faltas,
+  marcar recuperos
 - ✅ Costos: gastos fijos/variables/extraordinarios y proveedores (feature `costs`)
 - ✅ Facturación y cobranza (feature `billing`): precios/montos/estado en el detalle de cliente
 - ❌ Dashboard financiero, Sueldos, gestión de usuarios (Accesos)
@@ -544,17 +567,19 @@ npm run build
 ## Reglas de Negocio
 
 ### Días de Recupero
-1. Se otorga 1 día cuando se marca falta justificada con recupero (`justified_recovered`)
+1. Se otorga 1 día cuando se registra una falta justificada **cobrable**
+   (`status = 'absent'`, `is_justified = true`, `is_chargeable = true`)
 2. Se consume 1 día cuando se usa el botón "Recuperar día"
-3. Los días recuperados se marcan con estado `recovered`
-4. Los días recuperados SE COBRAN
+3. Los días recuperados se marcan con `status = 'recovery'`
+4. Los días recuperados SE COBRAN (ya se cobró el día de la falta que los originó)
 
 ### Facturación
 1. Los meses se cobran **por adelantado**
 2. Vencimiento: **día 10 de cada mes**
 3. El monto se calcula según días planificados (editables)
-4. Faltas `justified_not_recovered` NO se cobran
-5. Todo lo demás SE COBRA (asistencias, faltas injustificadas, recuperos)
+4. Las faltas con `is_chargeable = false` (siempre justificadas) NO se cobran
+5. Todo lo demás SE COBRA (asistencias, faltas injustificadas, faltas justificadas
+   cobrables, recuperos)
 6. Estado de factura y pago son **independientes**
 
 ### Precios (Asistencia)

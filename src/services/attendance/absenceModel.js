@@ -1,22 +1,26 @@
 /**
  * Lógica pura del modelo unificado de faltas. Toda falta es status 'absent',
- * descrita por is_justified + is_chargeable. El recupero se genera sii
- * (is_justified AND is_chargeable). Espejo exacto de la RPC register_absence.
+ * descrita por is_justified + is_chargeable.
  *
- * is_chargeable = NOT (justificada AND futuro AND mes NO pago)
- *   - futuro = date > today (estrictamente; hoy y pasado NO son futuro)
+ * `is_chargeable` lo ELIGE el usuario en el modal, ya no se deriva de la fecha:
+ * que una falta justificada se cobre o se descuente es una concesión comercial,
+ * no una consecuencia de cuándo se cargó. El default de la UI es siempre
+ * cobrable. Espejo exacto de la RPC register_absence.
  */
 
 /**
- * @param {{ isJustified: boolean, date: string, today: string, monthPaid: boolean }} p
- *   date/today en formato 'YYYY-MM-DD' (comparación lexicográfica válida).
+ * @param {{ isJustified: boolean, isChargeable: boolean }} p
  * @returns {{ status: 'absent', isJustified: boolean, isChargeable: boolean, generatesCredit: boolean }}
  */
-export function deriveAbsence({ isJustified, date, today, monthPaid }) {
-  const isFuture = date > today
-  const isChargeable = !(isJustified && isFuture && !monthPaid)
-  const generatesCredit = isJustified && isChargeable
-  return { status: 'absent', isJustified: !!isJustified, isChargeable, generatesCredit }
+export function deriveAbsence({ isJustified, isChargeable }) {
+  // Una falta injustificada se cobra siempre: la elección solo aplica a las justificadas.
+  const chargeable = !isJustified || !!isChargeable
+  return {
+    status: 'absent',
+    isJustified: !!isJustified,
+    isChargeable: chargeable,
+    generatesCredit: !!isJustified && chargeable
+  }
 }
 
 /** Clases Tailwind de la celda del calendario por status + atributos de falta. */
@@ -46,10 +50,9 @@ export function dayTooltip(status, isJustified, isChargeable, notes) {
 }
 
 /** Texto predecible del resultado, para el modal de registro de falta. */
-export function outcomePreview({ isJustified, date, today, monthPaid }) {
+export function outcomePreview({ isJustified, isChargeable }) {
   if (!isJustified) return 'Se cobra el día igual. Sin crédito de recupero.'
-  const { generatesCredit } = deriveAbsence({ isJustified, date, today, monthPaid })
-  return generatesCredit
+  return isChargeable
     ? 'Se cobra el día y se acredita 1 día de recupero.'
     : 'No se cobra el día (sin recupero).'
 }
