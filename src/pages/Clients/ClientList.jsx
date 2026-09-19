@@ -55,7 +55,9 @@ const medicalFlagsFor = (client) => {
   return MEDICAL_FLAGS.filter(f => conditions.has(f.condition))
 }
 
-// Configuración de filtros
+// Configuración de filtros. `hasActiveDiscount` sale de clients_full, que es security_invoker:
+// para el operador la RLS de monthly_invoices lo deja siempre en false, así que ese filtro
+// solo se ofrece a quien ve facturación.
 const FILTERS_CONFIG = [
   {
     key: 'cognitiveLevel',
@@ -102,6 +104,23 @@ const FILTERS_CONFIG = [
     ]
   },
   {
+    key: 'hasActiveDiscount',
+    label: 'Promoción',
+    type: 'checkbox',
+    billingOnly: true,
+    options: [
+      { value: true, label: 'Con promoción activa' }
+    ]
+  },
+  {
+    key: 'hasRecoveryDays',
+    label: 'Recupero',
+    type: 'checkbox',
+    options: [
+      { value: true, label: 'Con días de recupero' }
+    ]
+  },
+  {
     key: 'showDeleted',
     label: 'Bajas',
     options: [
@@ -109,6 +128,9 @@ const FILTERS_CONFIG = [
     ]
   }
 ]
+
+// Estado inicial (y de "Limpiar filtros"): una key por filtro, todas en null
+const EMPTY_FILTERS = FILTERS_CONFIG.reduce((acc, f) => ({ ...acc, [f.key]: null }), {})
 
 // Opciones de ordenamiento
 const SORT_OPTIONS = [
@@ -207,16 +229,15 @@ export default function ClientList() {
   const [deactivating, setDeactivating] = useState(false)
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('clients.viewMode') || 'grid')
   const [sortBy, setSortBy] = useState(() => localStorage.getItem('clients.sortBy') || 'name_asc')
-  const [filters, setFilters] = useState({
-    cognitiveLevel: null,
-    frequency: null,
-    schedule: null,
-    hasTransport: null,
-    clientType: null,
-    showDeleted: null
-  })
+  const [filters, setFilters] = useState(EMPTY_FILTERS)
 
   const navigate = useNavigate()
+
+  const canViewBilling = hasAccess('billing')
+  const filtersConfig = useMemo(
+    () => FILTERS_CONFIG.filter(f => !f.billingOnly || canViewBilling),
+    [canViewBilling]
+  )
 
   useEffect(() => {
     loadClients()
@@ -253,13 +274,15 @@ export default function ClientList() {
       const matchesSchedule = filters.schedule === null || client.plan.schedule === filters.schedule
       const matchesTransport = filters.hasTransport === null || client.plan.hasTransport === filters.hasTransport
       const matchesType = filters.clientType === null || (client.clientType || 'regular') === filters.clientType
+      const matchesDiscount = filters.hasActiveDiscount === null || !!client.hasActiveDiscount === filters.hasActiveDiscount
+      const matchesRecovery = filters.hasRecoveryDays === null || ((client.recoveryDaysAvailable || 0) > 0) === filters.hasRecoveryDays
       // "Solo bajas": con el filtro activo se muestran únicamente los dados de baja
       const matchesDeleted = filters.showDeleted === true ? !!client.deletedAt : !client.deletedAt
 
-      return matchesSearch && matchesCognitive && matchesFrequency && matchesSchedule && matchesTransport && matchesType && matchesDeleted
+      return matchesSearch && matchesCognitive && matchesFrequency && matchesSchedule && matchesTransport && matchesType && matchesDiscount && matchesRecovery && matchesDeleted
     })
     return sortClients(filtered, sortBy)
-  }, [clients, search, filters.cognitiveLevel, filters.frequency, filters.schedule, filters.hasTransport, filters.clientType, filters.showDeleted, sortBy])
+  }, [clients, search, filters.cognitiveLevel, filters.frequency, filters.schedule, filters.hasTransport, filters.clientType, filters.hasActiveDiscount, filters.hasRecoveryDays, filters.showDeleted, sortBy])
 
   const activeFiltersCount = getActiveFiltersCount(filters)
 
@@ -303,7 +326,7 @@ export default function ClientList() {
         <Filters
           filters={filters}
           onChange={setFilters}
-          config={FILTERS_CONFIG}
+          config={filtersConfig}
         />
 
         {/* Orden */}
@@ -365,7 +388,7 @@ export default function ClientList() {
           </p>
           {activeFiltersCount > 0 && (
             <button
-              onClick={() => setFilters({ cognitiveLevel: null, frequency: null, schedule: null, hasTransport: null, clientType: null, showDeleted: null })}
+              onClick={() => setFilters(EMPTY_FILTERS)}
               className="mt-2 text-purple-600 hover:text-purple-700 text-sm font-medium"
             >
               Limpiar filtros
