@@ -156,6 +156,10 @@ src/services/
 | `recovered` | Usó un día de recupero | ✅ Sí | -1 día recupero |
 | `scheduled` | Día programado (futuro) | - | - |
 
+`is_chargeable` ya **no se deriva de la fecha** (antes: una falta justificada futura en un
+mes no pago se marcaba automáticamente como no cobrable). Ahora lo **elige el usuario** en
+el modal de falta, y el default es **siempre** "cobrable + recupero", sin importar el mes.
+
 ### MonthlyInvoice (Factura mensual)
 ```javascript
 {
@@ -406,13 +410,19 @@ haberlo.
 Tres roles: `operador` < `admin` < `superadmin`. Fuente de verdad en frontend:
 `FEATURE_ROLES` en `src/context/AuthContext.jsx` (feature → roles), expuesta vía
 `hasAccess(feature)` y el helper puro `roleHasAccess(role, feature)`. Reforzado en
-backend con RLS (helper `is_admin_or_superadmin()`, migración 020).
+backend con RLS (helper `is_admin_or_superadmin()`, migración 020). Las RPC de asistencia
+(`register_absence`, `register_absence_range`, `unregister_absence`,
+`mark_day_recovery_attended`) son `SECURITY DEFINER` y saltean la RLS, así que llevan la
+misma guarda `is_admin_or_superadmin()` adentro (migración 084).
 
-Features: `clients`, `costs`, `billing`, `salaries`, `dashboard_financials`, `users`.
+Features: `clients`, `costs`, `billing`, `attendance_edit`, `salaries`, `dashboard_financials`, `users`.
 
 ### Operador
 - ✅ Clientes, grupos, transporte (operación y coordinación)
-- ✅ Calendario de asistencia (ver y editar)
+- ✅ Calendario de asistencia (**solo lectura** — feature `attendance_edit`): lo sigue viendo
+  para coordinar Grupos y Transporte, pero no puede registrar/deshacer faltas ni marcar
+  recuperos
+- ❌ Registrar/deshacer faltas y marcar recuperos: mueve plata
 - ✅ Seguimiento de bajas
 - ❌ Costos: gastos y proveedores (feature `costs`, migración 077) — ni ver ni ingresar
 - ❌ Precios, montos, facturación y cobranza (header del detalle de cliente)
@@ -420,6 +430,8 @@ Features: `clients`, `costs`, `billing`, `salaries`, `dashboard_financials`, `us
 
 ### Admin
 - ✅ Todo lo del operador
+- ✅ Calendario de asistencia editable (feature `attendance_edit`): registrar/deshacer faltas,
+  marcar recuperos
 - ✅ Costos: gastos fijos/variables/extraordinarios y proveedores (feature `costs`)
 - ✅ Facturación y cobranza (feature `billing`): precios/montos/estado en el detalle de cliente
 - ❌ Dashboard financiero, Sueldos, gestión de usuarios (Accesos)
