@@ -8,6 +8,9 @@
 -- sistema pasa a afirmar que el cliente pagó $Y cuando transfirió $X. La
 -- diferencia se devuelve por fuera del sistema; el rastro de lo realmente
 -- recibido queda en payment_notes.
+--
+-- Corregir re-snapshotea el mes ENTERO (mismas columnas que mark_month_paid),
+-- no sólo el total: el dashboard suma los desgloses net/gross, no paid_amount.
 
 -- ── 1. Marca de "este mes quedó descuadrado" ───────────────────────────────
 -- No se deriva comparando contra el recálculo: el recálculo usa los precios
@@ -45,15 +48,36 @@ BEGIN
   IF v_billing ? 'error' THEN
     RETURN jsonb_build_object('success', false, 'error', v_billing->>'error');
   END IF;
-  v_new := ROUND((v_billing->>'chargeableAmount')::NUMERIC);
+  v_new := ROUND((v_billing->>'totalChargeableGross')::NUMERIC);
 
   v_note := format('[%s] Corrección de cobro: %s → %s%s',
     to_char(CURRENT_DATE, 'DD/MM/YYYY'), v_previous, v_new,
     COALESCE(' · ' || p_created_by, ''));
 
+  -- Snapshot COMPLETO del mes, no sólo el total. get_dashboard_finance_series
+  -- (052) arma el cobrado sumando attendance_chargeable_* + transport_chargeable_*,
+  -- no paid_amount: si acá sólo escribiéramos chargeable_amount, la corrección
+  -- nunca llegaría al gráfico y la fila quedaría internamente inconsistente
+  -- (chargeable_amount ≠ att_gross + trans_gross). Mismas columnas que escriben
+  -- mark_month_paid (015) y mark_month_invoiced (056).
   UPDATE monthly_invoices
-  SET chargeable_amount = v_new,
+  SET planned_days = (v_billing->>'plannedDays')::INTEGER,
+      chargeable_days = (v_billing->>'chargeableDays')::INTEGER,
+      attendance_monthly_rate_net   = (v_billing->>'attendanceMonthlyRateNet')::NUMERIC,
+      attendance_monthly_rate_gross = (v_billing->>'attendanceMonthlyRateGross')::NUMERIC,
+      attendance_chargeable_net     = (v_billing->>'attendanceChargeableNet')::NUMERIC,
+      attendance_chargeable_gross   = (v_billing->>'attendanceChargeableGross')::NUMERIC,
+      transport_monthly_rate_net    = (v_billing->>'transportMonthlyRateNet')::NUMERIC,
+      transport_monthly_rate_gross  = (v_billing->>'transportMonthlyRateGross')::NUMERIC,
+      transport_chargeable_net      = (v_billing->>'transportChargeableNet')::NUMERIC,
+      transport_chargeable_gross    = (v_billing->>'transportChargeableGross')::NUMERIC,
+      chargeable_amount = v_new,
+      monthly_rate = (v_billing->>'attendanceMonthlyRateGross')::NUMERIC,
       paid_amount = v_new,
+      -- Después de corregir, lo cobrado ES lo calculado: ya no hay monto negociado
+      -- que preservar. Dejar el flag prendido afirmaría un override que no existe.
+      is_amount_overridden = false,
+      original_chargeable_amount = NULL,
       payment_notes = TRIM(BOTH E'\n' FROM COALESCE(payment_notes || E'\n', '') || v_note),
       correction_pending = false,
       updated_at = NOW()
