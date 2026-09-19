@@ -18,8 +18,11 @@ export default function Tooltip({ title, detail, children }) {
   if (!title) return children
 
   const show = () => {
-    const rect = anchorRef.current?.getBoundingClientRect()
-    if (!rect) return
+    // OJO: el wrapper es display:contents, que no genera caja — medirlo a él
+    // devuelve un rect en cero y el tooltip termina en la esquina de la
+    // pantalla. Se mide el hijo, que es el elemento que realmente se ve.
+    const rect = (anchorRef.current?.firstElementChild || anchorRef.current)?.getBoundingClientRect()
+    if (!rect || (rect.width === 0 && rect.height === 0)) return
     // Centrado sobre el ancla, clampeado para no salirse de la ventana.
     const x = Math.min(Math.max(rect.left + rect.width / 2, HALF + 8), window.innerWidth - HALF - 8)
     setPos({ x, y: rect.bottom + 6 })
