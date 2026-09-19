@@ -1,6 +1,7 @@
 import { useDraggable } from '@dnd-kit/core'
 import { Xmark, Check, RefreshDouble } from 'iconoir-react'
 import { dayTooltip } from '../../services/attendance/absenceModel'
+import Tooltip from '../../components/ui/Tooltip'
 
 const COGNITIVE_LEVEL_COLORS = {
   A: 'bg-green-100 text-green-700',
@@ -69,21 +70,19 @@ export function AbsenceClientChip({ client }) {
   const v = ABSENCE_STYLE
   const { absence } = client
   const tip = dayTooltip('absent', absence?.isJustified, absence?.isChargeable, absence?.notes)
-  const tooltip = tip.reason ? `${tip.title}\n${tip.reason}` : tip.title
 
   return (
-    <div
-      title={tooltip}
-      className={`flex items-center gap-2 px-3 py-2 border rounded-lg select-none ${v.chip}`}
-    >
-      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${v.dot}`} />
-      <span className="text-sm text-gray-700 font-medium flex-1 truncate">
-        {client.firstName} {client.lastName}
-      </span>
-      <span className={`flex-shrink-0 px-1.5 py-0.5 text-[9px] font-bold uppercase rounded ${v.tag}`}>
-        {v.label}
-      </span>
-    </div>
+    <Tooltip title={tip.title} detail={tip.reason}>
+      <div className={`flex items-center gap-2 px-3 py-2 border rounded-lg select-none cursor-default ${v.chip}`}>
+        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${v.dot}`} />
+        <span className="text-sm text-gray-700 font-medium flex-1 truncate">
+          {client.firstName} {client.lastName}
+        </span>
+        <span className={`flex-shrink-0 px-1.5 py-0.5 text-[9px] font-bold uppercase rounded ${v.tag}`}>
+          {v.label}
+        </span>
+      </div>
+    </Tooltip>
   )
 }
 

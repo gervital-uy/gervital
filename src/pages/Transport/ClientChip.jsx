@@ -2,6 +2,7 @@ import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { RefreshDouble } from 'iconoir-react'
 import { dayTooltip } from '../../services/attendance/absenceModel'
+import Tooltip from '../../components/ui/Tooltip'
 
 const COLOR_SCHEMES = {
   '#ef4444': { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-800' },
@@ -42,16 +43,14 @@ function ChipContent({ client, color, isOverlay, noAddress, isRecovery }) {
 export function AbsenceChip({ client }) {
   const { absence } = client
   const tip = dayTooltip('absent', absence?.isJustified, absence?.isChargeable, absence?.notes)
-  const tooltip = tip.reason ? `${tip.title}\n${tip.reason}` : tip.title
 
   return (
-    <div
-      title={tooltip}
-      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium select-none bg-red-50 border-red-200 text-red-700"
-    >
-      <span>{client.firstName} {client.lastName}</span>
-      <span className="text-[9px] font-bold uppercase opacity-80">falta</span>
-    </div>
+    <Tooltip title={tip.title} detail={tip.reason}>
+      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium select-none cursor-default bg-red-50 border-red-200 text-red-700">
+        <span>{client.firstName} {client.lastName}</span>
+        <span className="text-[9px] font-bold uppercase opacity-80">falta</span>
+      </div>
+    </Tooltip>
   )
 }
 
