@@ -1,4 +1,4 @@
-import { shouldPromptCorrection, correctionDelta } from './billingCorrection'
+import { shouldPromptCorrection, correctionDelta, monthsInRange } from './billingCorrection'
 
 describe('shouldPromptCorrection', () => {
   test('mes pago con monto distinto: corresponde corregir', () => {
@@ -43,5 +43,25 @@ describe('correctionDelta', () => {
   test('sin diferencia da 0 y dirección refund', () => {
     expect(correctionDelta({ paidAmount: 500, recalculatedAmount: 500 }))
       .toEqual({ amount: 0, direction: 'refund' })
+  })
+})
+
+describe('monthsInRange', () => {
+  test('un solo mes', () => {
+    expect(monthsInRange('2026-09-03', '2026-09-20')).toEqual([{ year: 2026, month: 8 }])
+  })
+
+  test('dos meses consecutivos', () => {
+    expect(monthsInRange('2026-09-28', '2026-10-05'))
+      .toEqual([{ year: 2026, month: 8 }, { year: 2026, month: 9 }])
+  })
+
+  test('cruza el fin de año', () => {
+    expect(monthsInRange('2026-12-28', '2027-01-04'))
+      .toEqual([{ year: 2026, month: 11 }, { year: 2027, month: 0 }])
+  })
+
+  test('rango invertido da vacío', () => {
+    expect(monthsInRange('2026-10-05', '2026-09-28')).toEqual([])
   })
 })

@@ -30,3 +30,21 @@ export function correctionDelta({ paidAmount, recalculatedAmount }) {
   const diff = toPesos(paidAmount) - toPesos(recalculatedAmount)
   return { amount: Math.abs(diff), direction: diff >= 0 ? 'refund' : 'debt' }
 }
+
+/**
+ * Meses calendario tocados por un rango de fechas, inclusive. Un rango de
+ * faltas puede cruzar meses y descuadrar más de un mes pago.
+ * @param {string} fromDate - 'YYYY-MM-DD'
+ * @param {string} toDate - 'YYYY-MM-DD'
+ * @returns {Array<{year: number, month: number}>} month 0-indexed
+ */
+export function monthsInRange(fromDate, toDate) {
+  const [fy, fm] = String(fromDate).split('-').map(Number)
+  const [ty, tm] = String(toDate).split('-').map(Number)
+  if (!fy || !fm || !ty || !tm) return []
+  const months = []
+  for (let i = fy * 12 + (fm - 1), last = ty * 12 + (tm - 1); i <= last; i++) {
+    months.push({ year: Math.floor(i / 12), month: i % 12 })
+  }
+  return months
+}

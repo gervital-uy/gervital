@@ -36,7 +36,7 @@ import {
   getClientFollowups
 } from '../../services/api'
 import { dayStyle, dayTooltip, outcomePreview } from '../../services/attendance/absenceModel'
-import { shouldPromptCorrection } from '../../services/invoices/billingCorrection'
+import { shouldPromptCorrection, monthsInRange } from '../../services/invoices/billingCorrection'
 import { useAuth, roleHasAccess } from '../../context/AuthContext'
 import { useReasonLabels } from '../../hooks/useReasonLabels'
 import AbsenceChargeableChoice from './AbsenceChargeableChoice'
@@ -840,6 +840,7 @@ export default function ClientDetail() {
               year={d.getFullYear()}
               month={d.getMonth()}
               invoice={null}
+              allInvoices={invoices}
               attendance={attendance}
               pricingData={pricingData}
               transportPricingData={transportPricingData}
@@ -855,6 +856,7 @@ export default function ClientDetail() {
               year={inv.year}
               month={inv.month}
               invoice={inv}
+              allInvoices={invoices}
               attendance={attendance}
               pricingData={pricingData}
               transportPricingData={transportPricingData}
@@ -913,7 +915,7 @@ export default function ClientDetail() {
 // ============================================================
 // MonthCard
 // ============================================================
-function MonthCard({ client, year, month, invoice, attendance, pricingData, transportPricingData, user, onRefresh }) {
+function MonthCard({ client, year, month, invoice, allInvoices, attendance, pricingData, transportPricingData, user, onRefresh }) {
   const [processing, setProcessing] = useState(false)
   // Modal state: null | 'payment' | 'undoPayment' | 'invoice' | 'absence' | 'undoAbsence' | 'recovery' | 'undoRecovery'
   const [modal, setModal] = useState(null)
@@ -1060,26 +1062,30 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
 
   const closeModal = () => { setModal(null); setSelectedDate(null); setSelectedRecord(null) }
 
-  // Después de tocar la asistencia, ver si algún mes pago quedó descuadrado.
+  // Después de tocar la asistencia, ver qué meses pagos quedaron descuadrados.
   // Solo para MOSTRAR la diferencia: el monto que se persiste lo recalcula la RPC.
-  const detectCorrections = async () => {
-    if (!invoice || invoice.paymentStatus !== 'paid') return
-    try {
-      const billing = await calculateMonthBilling(client.id, year, month)
-      const recalculated = billing.chargeableAmount
-      if (shouldPromptCorrection({ isPaid: true, paidAmount: invoice.paidAmount, recalculatedAmount: recalculated })) {
-        setCorrectionMonths([{ year, month, paidAmount: invoice.paidAmount, recalculatedAmount: recalculated }])
+  const detectCorrections = async (months = [{ year, month }]) => {
+    const found = []
+    for (const m of months) {
+      const inv = allInvoices.find(i => i.year === m.year && i.month === m.month)
+      if (!inv || inv.paymentStatus !== 'paid') continue
+      try {
+        const billing = await calculateMonthBilling(client.id, m.year, m.month)
+        if (shouldPromptCorrection({ isPaid: true, paidAmount: inv.paidAmount, recalculatedAmount: billing.chargeableAmount })) {
+          found.push({ year: m.year, month: m.month, paidAmount: inv.paidAmount, recalculatedAmount: billing.chargeableAmount })
+        }
+      } catch (e) {
+        console.error('No se pudo verificar el cobro de un mes:', e)
       }
-    } catch (e) {
-      console.error('No se pudo verificar el cobro del mes:', e)
     }
+    if (found.length) setCorrectionMonths(found)
   }
 
-  const withProcessing = async (fn) => {
+  const withProcessing = async (fn, months) => {
     setProcessing(true)
     try {
       await fn()
-      await detectCorrections()
+      await detectCorrections(months)
       await onRefresh()
     } catch (err) {
       console.error(err)
@@ -1333,7 +1339,10 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
         onConfirm={({ type, isChargeable, reason, range }) => {
           const isJustified = type === 'justified'
           if (range)
-            return withProcessing(() => registerAbsenceRange(client.id, range.from, range.to, isJustified, isChargeable, user?.name, reason))
+            return withProcessing(
+              () => registerAbsenceRange(client.id, range.from, range.to, isJustified, isChargeable, user?.name, reason),
+              monthsInRange(range.from, range.to)
+            )
           return withProcessing(() => registerAbsence(client.id, selectedDate, isJustified, isChargeable, user?.name, reason))
         }}
       />
