@@ -808,7 +808,9 @@ export default function ClientDetail() {
           Asistencia y facturación
         </h2>
         <p className="text-sm text-gray-500 mt-1">
-          Desliza para ver todos los meses. Haz clic en un día para registrar ausencias o faltas justificadas.
+          {roleHasAccess(user?.role, 'attendance_edit')
+            ? 'Desliza para ver todos los meses. Haz clic en un día para registrar una falta o un recupero.'
+            : 'Desliza para ver todos los meses. El calendario es de solo lectura para tu rol.'}
         </p>
       </div>
 
@@ -1115,6 +1117,21 @@ function MonthCard({ client, year, month, invoice, allInvoices, attendance, pric
     }
   }
 
+  // El badge recalcula contra el servidor: liveChargeableAmount es una estimación
+  // local y lo que el modal muestra como "corresponde" tiene que ser el monto real.
+  const handleOpenCorrection = async () => {
+    try {
+      const billing = await calculateMonthBilling(client.id, year, month)
+      setCorrectionMonths([{
+        year,
+        month,
+        paidAmount: invoice.paidAmount,
+        recalculatedAmount: billing.chargeableAmount,
+        invoiceStatus: invoice.invoiceStatus
+      }])
+    } catch (e) { window.alert(e.message) }
+  }
+
   const handleUndoPayment = async () => {
     setPaymentDropOpen(false)
     // No sale de un modal con lugar para el error: se muestra suelto.
@@ -1153,7 +1170,7 @@ function MonthCard({ client, year, month, invoice, allInvoices, attendance, pric
             {canViewBilling && isPaid && invoice?.correctionPending && (
               <button
                 type="button"
-                onClick={() => setCorrectionMonths([{ year, month, paidAmount: invoice.paidAmount, recalculatedAmount: liveChargeableAmount }])}
+                onClick={handleOpenCorrection}
                 className="ml-2 px-2 py-0.5 rounded-lg text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 align-middle"
               >
                 requiere corrección
@@ -1275,11 +1292,12 @@ function MonthCard({ client, year, month, invoice, allInvoices, attendance, pric
               const colorClass = isWeekend
                 ? 'text-gray-300'
                 : status === 'not_scheduled'
-                  ? 'bg-gray-50 text-gray-400 border border-dashed border-gray-200 hover:bg-blue-50 hover:text-blue-500'
+                  ? `bg-gray-50 text-gray-400 border border-dashed border-gray-200${canClick ? ' hover:bg-blue-50 hover:text-blue-500' : ''}`
                   : dayStyle(status, isJustified, isChargeable)
 
               const tip = dayTooltip(status, isJustified, isChargeable, notes)
-              const isRecoverable = status === 'not_scheduled' && !isWeekend
+              // Sin permisos (o cliente de baja) el día no se puede recuperar: no prometerlo.
+              const isRecoverable = status === 'not_scheduled' && !isWeekend && canClick
               const nativeTitle = isStartDate
                 ? 'Primer día'
                 : isRecoverable

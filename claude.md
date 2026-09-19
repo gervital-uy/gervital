@@ -291,8 +291,8 @@ const monthlyPrice = calculatePlanPrice(frequency, schedule)
 // Días planificados en el mes
 const plannedDays = getPlannedDaysForMonth(clientId, year, month)
 
-// Días cobrables (excluye justified_not_recovered)
-const chargeableDays = plannedDays.filter(d => d.status !== 'justified_not_recovered')
+// Días cobrables (excluye las faltas marcadas como no cobrables)
+const chargeableDays = plannedDays.filter(d => !(d.status === 'absent' && !d.isChargeable))
 
 // Monto a cobrar
 const chargeableAmount = (chargeableDays.length / plannedDays.length) * monthlyPrice
@@ -567,17 +567,19 @@ npm run build
 ## Reglas de Negocio
 
 ### Días de Recupero
-1. Se otorga 1 día cuando se marca falta justificada con recupero (`justified_recovered`)
+1. Se otorga 1 día cuando se registra una falta justificada **cobrable**
+   (`status = 'absent'`, `is_justified = true`, `is_chargeable = true`)
 2. Se consume 1 día cuando se usa el botón "Recuperar día"
-3. Los días recuperados se marcan con estado `recovered`
-4. Los días recuperados SE COBRAN
+3. Los días recuperados se marcan con `status = 'recovery'`
+4. Los días recuperados SE COBRAN (ya se cobró el día de la falta que los originó)
 
 ### Facturación
 1. Los meses se cobran **por adelantado**
 2. Vencimiento: **día 10 de cada mes**
 3. El monto se calcula según días planificados (editables)
-4. Faltas `justified_not_recovered` NO se cobran
-5. Todo lo demás SE COBRA (asistencias, faltas injustificadas, recuperos)
+4. Las faltas con `is_chargeable = false` (siempre justificadas) NO se cobran
+5. Todo lo demás SE COBRA (asistencias, faltas injustificadas, faltas justificadas
+   cobrables, recuperos)
 6. Estado de factura y pago son **independientes**
 
 ### Precios (Asistencia)
