@@ -233,6 +233,12 @@ export default function CostsPage() {
     expenseGroupOpts
   )
 
+  // Totales de lo efectivamente listado debajo de cada header. Salen de los subtotales
+  // por categoría, así que siguen a los filtros activos y cuadran con lo que se ve.
+  const sumSubtotals = (groups) => groups.reduce((sum, g) => sum + g.subtotal, 0)
+  const fixedListedTotal = sumSubtotals(fixedGroups)
+  const variableListedTotal = sumSubtotals(variableGroups)
+
   // Suppliers reference an expense category; reuse the shared category options.
   const supplierCategoryOptions = categoryOptions
 
@@ -423,6 +429,9 @@ export default function CostsPage() {
             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-blue-500"></span>
               Gastos fijos
+              <span className="text-sm font-normal text-gray-400" title="Suma de las categorías listadas">
+                {formatCurrency(fixedListedTotal)}
+              </span>
             </h3>
             <CostsFilterBar
               filters={fixedFilters}
@@ -464,6 +473,9 @@ export default function CostsPage() {
               <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                 <span className="w-3 h-3 rounded-full bg-amber-500"></span>
                 Gastos variables
+                <span className="text-sm font-normal text-gray-400" title="Suma de las categorías listadas">
+                  {formatCurrency(variableListedTotal)}
+                </span>
               </h3>
               <Button variant="secondary" onClick={() => setCopyModalOpen(true)}>
                 Copiar del mes pasado
