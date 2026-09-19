@@ -6,6 +6,9 @@ const AuthContext = createContext(null)
 // Feature -> roles allowed. Single source of truth for RBAC.
 const FEATURE_ROLES = {
   clients: ['operador', 'admin', 'superadmin'],
+  // Registrar/deshacer faltas y marcar recuperos: mueve plata (cobra o descuenta
+  // un día, otorga o consume un crédito), así que no es operativo.
+  attendance_edit: ['admin', 'superadmin'],
   costs: ['admin', 'superadmin'],
   billing: ['admin', 'superadmin'],
   salaries: ['superadmin'],
