@@ -1075,8 +1075,20 @@ function MonthCard({ client, year, month, invoice, allInvoices, attendance, pric
       if (!inv || inv.paymentStatus !== 'paid') continue
       try {
         const billing = await calculateMonthBilling(client.id, m.year, m.month)
-        if (shouldPromptCorrection({ isPaid: true, paidAmount: inv.paidAmount, recalculatedAmount: billing.chargeableAmount })) {
-          found.push({ year: m.year, month: m.month, paidAmount: inv.paidAmount, recalculatedAmount: billing.chargeableAmount })
+        const prompt = shouldPromptCorrection({
+          isPaid: true,
+          paidAmount: inv.paidAmount,
+          recalculatedAmount: billing.chargeableAmount,
+          isAmountOverridden: inv.isAmountOverridden
+        })
+        if (prompt) {
+          found.push({
+            year: m.year,
+            month: m.month,
+            paidAmount: inv.paidAmount,
+            recalculatedAmount: billing.chargeableAmount,
+            invoiceStatus: inv.invoiceStatus
+          })
         }
       } catch (e) {
         console.error('No se pudo verificar el cobro de un mes:', e)

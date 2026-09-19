@@ -78,6 +78,16 @@ export default function MonthBillingCorrectionModal({ isOpen, onClose, months, c
           Corregir reescribe el monto cobrado del mes. La transferencia se hace por fuera del sistema.
         </p>
 
+        {/* El e-Ticket ya emitido no se re-emite: corregir deja el sistema diciendo
+            un monto distinto del que DGI tiene aceptado. */}
+        {current.invoiceStatus === 'invoiced' && (
+          <p className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
+            Este mes ya está facturado. Corregirlo reescribe el monto de una factura
+            electrónica aceptada por DGI, que no se modifica: habrá que emitir una nota
+            de crédito o débito por fuera del sistema.
+          </p>
+        )}
+
         {months.length > 1 && (
           <p className="text-xs text-gray-400">Mes {index + 1} de {months.length}</p>
         )}

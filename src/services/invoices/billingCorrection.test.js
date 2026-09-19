@@ -18,6 +18,12 @@ describe('shouldPromptCorrection', () => {
     expect(shouldPromptCorrection({ isPaid: true, paidAmount: null, recalculatedAmount: 11600 })).toBe(false)
   })
 
+  test('mes con monto negociado: la diferencia es a propósito, no molesta', () => {
+    expect(shouldPromptCorrection({
+      isPaid: true, paidAmount: 10000, recalculatedAmount: 11600, isAmountOverridden: true
+    })).toBe(false)
+  })
+
   test('compara redondeado a peso, no en flotante', () => {
     expect(shouldPromptCorrection({ isPaid: true, paidAmount: 11600.4, recalculatedAmount: 11600 })).toBe(false)
     expect(shouldPromptCorrection({ isPaid: true, paidAmount: 11601, recalculatedAmount: 11600 })).toBe(true)
@@ -38,6 +44,13 @@ describe('correctionDelta', () => {
   test('el monto siempre es positivo', () => {
     expect(correctionDelta({ paidAmount: 100, recalculatedAmount: 900 }).amount).toBe(800)
     expect(correctionDelta({ paidAmount: 900, recalculatedAmount: 100 }).amount).toBe(800)
+  })
+
+  test('sin monto cobrado no inventa una deuda', () => {
+    expect(correctionDelta({ paidAmount: null, recalculatedAmount: 11600 }))
+      .toEqual({ amount: 0, direction: 'refund' })
+    expect(correctionDelta({ paidAmount: undefined, recalculatedAmount: 11600 }))
+      .toEqual({ amount: 0, direction: 'refund' })
   })
 
   test('sin diferencia da 0 y dirección refund', () => {

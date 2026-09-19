@@ -13,20 +13,27 @@
 const toPesos = (n) => Math.round(Number(n) || 0)
 
 /**
- * @param {{ isPaid: boolean, paidAmount: number|null, recalculatedAmount: number }} p
+ * @param {{ isPaid: boolean, paidAmount: number|null, recalculatedAmount: number, isAmountOverridden?: boolean }} p
  * @returns {boolean}
  */
-export function shouldPromptCorrection({ isPaid, paidAmount, recalculatedAmount }) {
+export function shouldPromptCorrection({ isPaid, paidAmount, recalculatedAmount, isAmountOverridden }) {
   if (!isPaid) return false
   if (paidAmount === null || paidAmount === undefined) return false
+  // Monto negociado: se cobró a propósito algo distinto de lo calculado, así que
+  // la diferencia es permanente y no viene de la falta. Preguntar por ella en cada
+  // edición de asistencia sería ruido, y "Corregir" borraría el monto acordado.
+  if (isAmountOverridden) return false
   return toPesos(paidAmount) !== toPesos(recalculatedAmount)
 }
 
 /**
- * @param {{ paidAmount: number, recalculatedAmount: number }} p
+ * @param {{ paidAmount: number|null, recalculatedAmount: number }} p
  * @returns {{ amount: number, direction: 'refund' | 'debt' }} amount siempre positivo
  */
 export function correctionDelta({ paidAmount, recalculatedAmount }) {
+  // Sin monto cobrado no hay diferencia que mostrar: toPesos(null) daría 0 y el
+  // modal inventaría una deuda por el total del mes.
+  if (paidAmount === null || paidAmount === undefined) return { amount: 0, direction: 'refund' }
   const diff = toPesos(paidAmount) - toPesos(recalculatedAmount)
   return { amount: Math.abs(diff), direction: diff >= 0 ? 'refund' : 'debt' }
 }
