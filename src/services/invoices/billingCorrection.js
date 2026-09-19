@@ -48,3 +48,21 @@ export function monthsInRange(fromDate, toDate) {
   }
   return months
 }
+
+// Marca que escribe apply_month_billing_correction en payment_notes.
+const CORRECTION_NOTE_MARK = 'Corrección de cobro:'
+
+/**
+ * Deshacer el cobro de un mes limpia las notas de pago, pero las líneas de
+ * corrección son el único rastro de lo REALMENTE recibido (corregir pisa
+ * paid_amount con lo calculado). Conserva sólo esas líneas.
+ * @param {string|null|undefined} notes
+ * @returns {string|null} null si no queda ninguna
+ */
+export function keepCorrectionNotes(notes) {
+  if (!notes) return null
+  const kept = String(notes)
+    .split('\n')
+    .filter(line => line.includes(CORRECTION_NOTE_MARK))
+  return kept.length ? kept.join('\n') : null
+}

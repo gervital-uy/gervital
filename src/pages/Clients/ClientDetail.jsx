@@ -1131,7 +1131,7 @@ function MonthCard({ client, year, month, invoice, allInvoices, attendance, pric
                 )}
               </span>
             )}
-            {canViewBilling && invoice?.correctionPending && (
+            {canViewBilling && isPaid && invoice?.correctionPending && (
               <button
                 type="button"
                 onClick={() => setCorrectionMonths([{ year, month, paidAmount: invoice.paidAmount, recalculatedAmount: liveChargeableAmount }])}

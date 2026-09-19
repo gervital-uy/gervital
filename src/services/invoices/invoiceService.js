@@ -1,4 +1,5 @@
 import { supabase } from '../supabase/client'
+import { keepCorrectionNotes } from './billingCorrection'
 
 /**
  * Ensure monthly_invoice rows exist from client.start_date → now+6mo
@@ -175,6 +176,20 @@ export async function markMonthInvoiced(clientId, year, month, invoiceNumber, in
  * @param {number} month - 0-indexed
  */
 export async function unmarkMonthPaid(clientId, year, month) {
+  // Las líneas de corrección son el único rastro de lo REALMENTE recibido (la
+  // corrección pisa paid_amount a propósito). Borrar payment_notes entero las
+  // perdería, así que se conservan y se descartan sólo las notas de cobro.
+  const { data: current, error: readError } = await supabase
+    .from('monthly_invoices')
+    .select('payment_notes')
+    .eq('client_id', clientId)
+    .eq('year', year)
+    .eq('month', month)
+    .maybeSingle()
+  if (readError) throw new Error(readError.message)
+
+  const preservedNotes = keepCorrectionNotes(current?.payment_notes)
+
   const { error } = await supabase
     .from('monthly_invoices')
     .update({
@@ -183,9 +198,12 @@ export async function unmarkMonthPaid(clientId, year, month) {
       paid_date: null,
       paid_amount: null,
       payment_method: null,
-      payment_notes: null,
+      payment_notes: preservedNotes,
       is_amount_overridden: false,
       original_chargeable_amount: null,
+      // Sin monto cobrado no hay nada que corregir, y apply_month_billing_correction
+      // rechaza el mes: dejarlo prendido sería un flag que nadie puede apagar.
+      correction_pending: false,
       updated_at: new Date().toISOString()
     })
     .eq('client_id', clientId)

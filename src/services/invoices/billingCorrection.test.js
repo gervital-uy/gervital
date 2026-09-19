@@ -1,4 +1,4 @@
-import { shouldPromptCorrection, correctionDelta, monthsInRange } from './billingCorrection'
+import { shouldPromptCorrection, correctionDelta, monthsInRange, keepCorrectionNotes } from './billingCorrection'
 
 describe('shouldPromptCorrection', () => {
   test('mes pago con monto distinto: corresponde corregir', () => {
@@ -63,5 +63,28 @@ describe('monthsInRange', () => {
 
   test('rango invertido da vacío', () => {
     expect(monthsInRange('2026-10-05', '2026-09-28')).toEqual([])
+  })
+})
+
+describe('keepCorrectionNotes', () => {
+  test('conserva sólo las líneas de corrección', () => {
+    const notes = 'Transferencia BROU\n[10/09/2026] Corrección de cobro: 12400 → 11600 · Ana\npendiente de recibo'
+    expect(keepCorrectionNotes(notes)).toBe('[10/09/2026] Corrección de cobro: 12400 → 11600 · Ana')
+  })
+
+  test('varias correcciones se conservan todas, en orden', () => {
+    const notes = '[01/09/2026] Corrección de cobro: 100 → 90\nnota suelta\n[02/09/2026] Corrección de cobro: 90 → 80'
+    expect(keepCorrectionNotes(notes))
+      .toBe('[01/09/2026] Corrección de cobro: 100 → 90\n[02/09/2026] Corrección de cobro: 90 → 80')
+  })
+
+  test('sin correcciones queda en null', () => {
+    expect(keepCorrectionNotes('Transferencia BROU')).toBeNull()
+  })
+
+  test('notas vacías o ausentes dan null', () => {
+    expect(keepCorrectionNotes(null)).toBeNull()
+    expect(keepCorrectionNotes(undefined)).toBeNull()
+    expect(keepCorrectionNotes('')).toBeNull()
   })
 })
