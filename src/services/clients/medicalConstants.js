@@ -7,6 +7,21 @@ export const MARITAL_STATUS_OPTIONS = [
   { value: 'concubinato', label: 'Concubinato' }
 ]
 
+// `shortLabel` es el rótulo de la ficha ("Cédula"); `label` desambigua en el
+// formulario de alta, donde conviven los cinco tipos.
+export const DOCUMENT_TYPE_OPTIONS = [
+  { value: 'ci', label: 'Cédula (CI)', shortLabel: 'Cédula' },
+  { value: 'rut', label: 'RUT', shortLabel: 'RUT' },
+  { value: 'dni', label: 'DNI', shortLabel: 'DNI' },
+  { value: 'pasaporte', label: 'Pasaporte', shortLabel: 'Pasaporte' },
+  { value: 'otro', label: 'Otro', shortLabel: 'Documento' }
+]
+
+/** Rótulo corto del tipo de documento; 'ci' es el default de la DB. */
+export function documentTypeLabel(type) {
+  return DOCUMENT_TYPE_OPTIONS.find(o => o.value === (type || 'ci'))?.shortLabel || 'Documento'
+}
+
 export const RESIDENCE_TYPE_OPTIONS = [
   { value: 'residencial', label: 'Residencial' },
   { value: 'propio', label: 'Propio' },

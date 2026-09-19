@@ -17,7 +17,7 @@ import { CLIENT_TYPES, CLIENT_TYPE_META, isNonBillableType } from '../../service
 import Card, { CardContent } from '../../components/ui/Card'
 import { useAuth } from '../../context/AuthContext'
 import { RepeatableRows } from './medical/RepeatableRows'
-import { MARITAL_STATUS_OPTIONS, RESIDENCE_TYPE_OPTIONS, CHARACTER_OPTIONS, DIAGNOSIS_TYPE_OPTIONS, MEDICAL_HISTORY_CONDITIONS } from '../../services/clients/medicalConstants'
+import { MARITAL_STATUS_OPTIONS, RESIDENCE_TYPE_OPTIONS, CHARACTER_OPTIONS, DIAGNOSIS_TYPE_OPTIONS, MEDICAL_HISTORY_CONDITIONS, DOCUMENT_TYPE_OPTIONS } from '../../services/clients/medicalConstants'
 import { TESTS_CATALOG, getMaxScore } from '../../services/clients/testsCatalog'
 import { computeScore } from '../../services/clients/testScoring'
 import { createTestInstance } from '../../services/api'
@@ -45,14 +45,6 @@ const COGNITIVE_LEVEL_OPTIONS = [
   { value: 'B', label: 'B - Asistencia leve' },
   { value: 'C', label: 'C - Asistencia moderada' },
   { value: 'D', label: 'D - Asistencia alta' }
-]
-
-const DOCUMENT_TYPE_OPTIONS = [
-  { value: 'ci', label: 'Cédula (CI)' },
-  { value: 'rut', label: 'RUT' },
-  { value: 'dni', label: 'DNI' },
-  { value: 'pasaporte', label: 'Pasaporte' },
-  { value: 'otro', label: 'Otro' }
 ]
 
 const BASE_STEPS = [

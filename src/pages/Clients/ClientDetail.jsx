@@ -51,7 +51,7 @@ import { isInactiveOn } from '../../services/clients/inactivityPeriods'
 import RecoveryCreditsModal from './RecoveryCreditsModal'
 import ClientTests from './ClientTests'
 import ClientFollowups from './ClientFollowups'
-import { MARITAL_STATUS_OPTIONS, RESIDENCE_TYPE_OPTIONS, MEDICAL_HISTORY_CONDITIONS, DIAGNOSIS_TYPE_OPTIONS, CHARACTER_OPTIONS } from '../../services/clients/medicalConstants'
+import { MARITAL_STATUS_OPTIONS, RESIDENCE_TYPE_OPTIONS, MEDICAL_HISTORY_CONDITIONS, DIAGNOSIS_TYPE_OPTIONS, CHARACTER_OPTIONS, documentTypeLabel } from '../../services/clients/medicalConstants'
 
 const SCHEDULE_LABELS = {
   morning: 'Mañana',
@@ -614,6 +614,10 @@ export default function ClientDetail() {
               <div>
                 <p className="text-sm text-gray-500">Nombre completo</p>
                 <p className="font-medium text-gray-900">{client.firstName} {client.lastName}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">{documentTypeLabel(client.documentType)}</p>
+                <p className="font-medium text-gray-900">{client.documentNumber || '-'}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-500">Email</p>
