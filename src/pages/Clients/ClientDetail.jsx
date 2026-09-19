@@ -36,12 +36,14 @@ import {
   getClientFollowups
 } from '../../services/api'
 import { dayStyle, dayTooltip, outcomePreview } from '../../services/attendance/absenceModel'
+import { shouldPromptCorrection } from '../../services/invoices/billingCorrection'
 import { useAuth, roleHasAccess } from '../../context/AuthContext'
 import { useReasonLabels } from '../../hooks/useReasonLabels'
 import AbsenceChargeableChoice from './AbsenceChargeableChoice'
 import EmitInvoiceModal from './EmitInvoiceModal'
 import ApplyDiscountModal from './ApplyDiscountModal'
 import PrepaidPromoModal from './PrepaidPromoModal'
+import MonthBillingCorrectionModal from './MonthBillingCorrectionModal'
 import Button from '../../components/ui/Button'
 import Card, { CardContent, CardHeader } from '../../components/ui/Card'
 import Tabs from '../../components/ui/Tabs'
@@ -919,6 +921,7 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
   const [selectedRecord, setSelectedRecord] = useState(null)
   const [paymentDropOpen, setPaymentDropOpen] = useState(false)
   const [emitModalOpen, setEmitModalOpen] = useState(false)
+  const [correctionMonths, setCorrectionMonths] = useState([])
   const paymentDropRef = useRef(null)
   const isDeactivated = !!client.deletedAt
 
@@ -1057,10 +1060,26 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
 
   const closeModal = () => { setModal(null); setSelectedDate(null); setSelectedRecord(null) }
 
+  // Después de tocar la asistencia, ver si algún mes pago quedó descuadrado.
+  // Solo para MOSTRAR la diferencia: el monto que se persiste lo recalcula la RPC.
+  const detectCorrections = async () => {
+    if (!invoice || invoice.paymentStatus !== 'paid') return
+    try {
+      const billing = await calculateMonthBilling(client.id, year, month)
+      const recalculated = billing.chargeableAmount
+      if (shouldPromptCorrection({ isPaid: true, paidAmount: invoice.paidAmount, recalculatedAmount: recalculated })) {
+        setCorrectionMonths([{ year, month, paidAmount: invoice.paidAmount, recalculatedAmount: recalculated }])
+      }
+    } catch (e) {
+      console.error('No se pudo verificar el cobro del mes:', e)
+    }
+  }
+
   const withProcessing = async (fn) => {
     setProcessing(true)
     try {
       await fn()
+      await detectCorrections()
       await onRefresh()
     } catch (err) {
       console.error(err)
@@ -1102,6 +1121,15 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
                   </button>
                 )}
               </span>
+            )}
+            {canViewBilling && invoice?.correctionPending && (
+              <button
+                type="button"
+                onClick={() => setCorrectionMonths([{ year, month, paidAmount: invoice.paidAmount, recalculatedAmount: liveChargeableAmount }])}
+                className="ml-2 px-2 py-0.5 rounded-lg text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 align-middle"
+              >
+                requiere corrección
+              </button>
             )}
           </h3>
 
@@ -1351,6 +1379,16 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
           withProcessing(() => unmarkDayRecoveryAttended(client.id, selectedDate, user?.name))
         }
         loading={processing}
+      />
+
+      {/* ── MonthBillingCorrectionModal (mes ya pago que quedó descuadrado) ── */}
+      <MonthBillingCorrectionModal
+        isOpen={correctionMonths.length > 0}
+        onClose={() => setCorrectionMonths([])}
+        months={correctionMonths}
+        clientId={client.id}
+        userName={user?.name}
+        onDone={onRefresh}
       />
     </>
   )
