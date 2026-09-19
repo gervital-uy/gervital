@@ -53,6 +53,8 @@ import {
   fixedMonthlyForMonth,
   getEmployees,
   getStandaloneExtraCosts,
+  ensureDirectorContributions,
+  updateExtraCost,
   createEmployee,
   updateEmployee,
   deleteEmployee,
@@ -65,6 +67,7 @@ import {
   extraCostLabel
 } from '../../services/api'
 import { currentSalary, monthlyCostBreakdown, extraordinarios12m } from '../../services/salaries/salaryCalc'
+import { DIRECTOR_SYSTEM_KEY } from '../../services/salaries/directorContribution'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import Modal from '../../components/ui/Modal'
@@ -110,6 +113,7 @@ export default function CostsPage() {
   const [employeeModal, setEmployeeModal] = useState({ open: false, employee: null })
   const [addEmployeeOpen, setAddEmployeeOpen] = useState(false)
   const [standaloneModalOpen, setStandaloneModalOpen] = useState(false)
+  const [editCostModal, setEditCostModal] = useState({ open: false, cost: null })
 
   const year = selectedDate.getFullYear()
   const month = selectedDate.getMonth()
@@ -149,13 +153,22 @@ export default function CostsPage() {
       setExtraordinaryExpenses(extraordinaryData)
       setContingencyPct(pctSetting != null ? Number(pctSetting) : 10)
       if (hasAccess('salaries')) {
-        const [employeesData, standaloneData, providersData] = await Promise.all([
+        const [employeesData, providersData] = await Promise.all([
           getEmployees(),
-          getStandaloneExtraCosts(),
           getServiceProviders()
         ])
+        // Self-heal del aporte de directores antes de leer los extraordinarios,
+        // para que el mes recién creado ya aparezca en esta misma carga.
+        // Best-effort: si falla (carrera entre dos pestañas contra el índice
+        // único, permisos) no debe tumbar la pantalla de Costos.
+        // El mes corriente de verdad, no el que se está mirando: navegar a un mes
+        // futuro no debe materializar gastos futuros.
+        const now = new Date()
+        await ensureDirectorContributions(employeesData, { year: now.getFullYear(), month: now.getMonth() }).catch(e =>
+          console.error('No se pudo generar el aporte de directores:', e)
+        )
         setEmployees(employeesData)
-        setStandaloneCosts(standaloneData)
+        setStandaloneCosts(await getStandaloneExtraCosts())
         setServiceProviders(providersData)
       }
     } catch (error) {
@@ -311,6 +324,11 @@ export default function CostsPage() {
     } catch (e) {
       alert('Error al eliminar: ' + e.message)
     }
+  }
+
+  const handleSaveCostAmount = async (id, amount) => {
+    await updateExtraCost(id, { amount })
+    await loadData()
   }
 
   const handleDeleteStandalone = async (id) => {
@@ -717,25 +735,53 @@ export default function CostsPage() {
               <Card className="p-6 text-center"><p className="text-gray-500">Sin gastos extraordinarios este mes</p></Card>
             ) : (
               <div className="space-y-3">
-                {standaloneThisMonth.map(c => (
-                  <Card key={c.id} className="p-4">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h5 className="font-medium text-gray-900">{c.concept || 'Sin concepto'}</h5>
-                        <p className="text-xs text-gray-400 mt-1">{format(parseDateOnly(c.date), 'd MMM yyyy', { locale: es })}</p>
+                {standaloneThisMonth.map(c => {
+                  // La fila del sistema se edita pero no se borra: el self-heal
+                  // la recrearía y quedaría el estado raro de "la borré y volvió".
+                  const isSystem = c.systemKey === DIRECTOR_SYSTEM_KEY
+                  return (
+                    <Card key={c.id} className="p-4">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <h5 className="font-medium text-gray-900 flex items-center gap-2 flex-wrap">
+                            {c.concept || 'Sin concepto'}
+                            {isSystem && (
+                              c.overriddenAt ? (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                                  editado a mano
+                                </span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-500 border border-gray-200">
+                                  creado por sistema
+                                </span>
+                              )
+                            )}
+                          </h5>
+                          <p className="text-xs text-gray-400 mt-1">{format(parseDateOnly(c.date), 'd MMM yyyy', { locale: es })}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <p className="text-lg font-semibold text-gray-900">{formatCurrency(c.amount)}</p>
+                          {isSystem ? (
+                            <button
+                              onClick={() => setEditCostModal({ open: true, cost: c })}
+                              title="Editar monto"
+                              className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleDeleteStandalone(c.id)}
+                              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            >
+                              <Trash className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <p className="text-lg font-semibold text-gray-900">{formatCurrency(c.amount)}</p>
-                        <button
-                          onClick={() => handleDeleteStandalone(c.id)}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        >
-                          <Trash className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
+                    </Card>
+                  )
+                })}
               </div>
             )}
           </div>
@@ -824,6 +870,13 @@ export default function CostsPage() {
         provider={providerModal.provider}
         onClose={() => setProviderModal({ open: false, provider: null })}
         onSave={handleSaveProvider}
+      />
+
+      <EditCostAmountModal
+        isOpen={editCostModal.open}
+        cost={editCostModal.cost}
+        onClose={() => setEditCostModal({ open: false, cost: null })}
+        onSave={handleSaveCostAmount}
       />
 
       {/* Standalone extra cost modal */}
@@ -1713,6 +1766,52 @@ function StandaloneCostModal({ isOpen, onClose, onSave }) {
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
           <Button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Agregar'}</Button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+// Pisar a mano el monto de un gasto generado por el sistema. El monto no se
+// recalcula nunca (una fila creada queda congelada); editarlo solo cambia el
+// cartel a "editado a mano", que es lo que explica por qué ese mes no cuadra
+// con la fórmula. Para anular el aporte de un mes se pone en 0.
+function EditCostAmountModal({ isOpen, cost, onClose, onSave }) {
+  const [amount, setAmount] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (isOpen && cost) setAmount(String(cost.amount))
+  }, [isOpen, cost])
+
+  if (!cost) return null
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      await onSave(cost.id, Number(amount))
+      onClose()
+    } catch (err) {
+      alert('Error al guardar: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Editar monto">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <p className="text-sm text-gray-600">
+          {cost.concept} — {format(parseDateOnly(cost.date), "MMMM yyyy", { locale: es })}
+        </p>
+        <Input label="Monto" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} required />
+        <p className="text-xs text-gray-500">
+          El monto queda como lo dejes: este gasto no se recalcula. Poné 0 para anular el aporte de este mes.
+        </p>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
+          <Button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar'}</Button>
         </div>
       </form>
     </Modal>

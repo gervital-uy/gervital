@@ -5,7 +5,7 @@ import { parseDateOnly } from '../../utils/date'
 import { Plus, Edit, Trash } from 'iconoir-react'
 import Button from '../../components/ui/Button'
 import { deleteFollowup } from '../../services/api'
-import FollowupModal, { motivationConfig, typeLabel } from './FollowupModal'
+import FollowupModal, { motivationConfig, typeLabel, FOLLOWUP_TYPES } from './FollowupModal'
 
 function fmtDate(d) {
   return d ? format(parseDateOnly(d), 'd MMM yyyy', { locale: es }) : '—'
@@ -64,6 +64,19 @@ function StrategiesBlock({ strategies, specificObjectives }) {
 
 export default function ClientFollowups({ clientId, reports, professional, canMutate, onRefresh }) {
   const [modal, setModal] = useState(null) // { report? } | null
+  // Filtro por tipo: toggles independientes, todos encendidos por defecto.
+  // `type` es NOT NULL y está restringido a los tres valores (migración 072),
+  // así que todo informe cae bajo algún chip.
+  const [activeTypes, setActiveTypes] = useState(() => new Set(FOLLOWUP_TYPES.map(t => t.value)))
+
+  const toggleType = (value) => setActiveTypes(prev => {
+    const next = new Set(prev)
+    if (next.has(value)) next.delete(value)
+    else next.add(value)
+    return next
+  })
+
+  const visibleReports = reports.filter(r => activeTypes.has(r.type))
 
   const handleDelete = async (report) => {
     if (!window.confirm('¿Eliminar este informe? No se puede deshacer.')) return
@@ -73,25 +86,51 @@ export default function ClientFollowups({ clientId, reports, professional, canMu
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
         <div>
           <h3 className="font-semibold text-gray-900">Seguimiento y observaciones</h3>
           <p className="text-sm text-gray-500">Informes del equipo interdisciplinario</p>
         </div>
-        {canMutate && (
-          <Button size="sm" onClick={() => setModal({})}>
-            <Plus className="w-4 h-4" /> Nuevo informe
-          </Button>
-        )}
+        <div className="flex items-center gap-2 flex-wrap ml-auto">
+          {FOLLOWUP_TYPES.map(t => {
+            const active = activeTypes.has(t.value)
+            return (
+              <button
+                key={t.value}
+                type="button"
+                aria-pressed={active}
+                onClick={() => toggleType(t.value)}
+                className={`px-3 py-1 rounded-full border text-xs font-medium transition-colors ${
+                  active
+                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                    : 'border-gray-200 bg-white text-gray-400 hover:bg-gray-50'
+                }`}
+              >
+                {t.label}
+              </button>
+            )
+          })}
+          {canMutate && (
+            <Button size="sm" onClick={() => setModal({})}>
+              <Plus className="w-4 h-4" /> Nuevo informe
+            </Button>
+          )}
+        </div>
       </div>
 
       {reports.length === 0 ? (
         <p className="text-sm text-gray-400 py-8 text-center rounded-xl border border-dashed border-gray-200">
           Todavía no hay informes. {canMutate ? 'Creá el primero con "Nuevo informe".' : ''}
         </p>
+      ) : visibleReports.length === 0 ? (
+        <p className="text-sm text-gray-400 py-8 text-center rounded-xl border border-dashed border-gray-200">
+          {activeTypes.size === 0
+            ? 'Activá al menos un tipo para ver los informes.'
+            : 'No hay informes de los tipos seleccionados.'}
+        </p>
       ) : (
         <div className="space-y-3">
-          {reports.map(r => {
+          {visibleReports.map(r => {
             const mot = motivationConfig(r.motivation)
             return (
               <article key={r.id} className={`rounded-xl border border-gray-200 border-l-4 ${mot ? mot.border : 'border-l-gray-200'} p-4`}>
