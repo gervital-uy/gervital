@@ -138,6 +138,8 @@ export default function ClientDetail() {
 
   const optionsMenuRef = useRef(null)
   const avatarInputRef = useRef(null)
+  const monthsScrollRef = useRef(null)
+  const didCenterCurrentMonth = useRef(false)
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -150,12 +152,42 @@ export default function ClientDetail() {
   }, [])
 
   useEffect(() => {
+    didCenterCurrentMonth.current = false
     loadClientData()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
-  const loadClientData = async () => {
-    setLoading(true)
+  // Al abrir la ficha, posicionar el scroll de meses en el mes actual (o el más cercano,
+  // para clientes dados de baja cuyo último mes ya pasó). Una sola vez por cliente.
+  useEffect(() => {
+    if (loading || didCenterCurrentMonth.current) return
+    const container = monthsScrollRef.current
+    if (!container) return
+    const cards = Array.from(container.querySelectorAll('[data-month-key]'))
+    if (!cards.length) return
+
+    const now = new Date()
+    const target = now.getFullYear() * 12 + now.getMonth()
+    const closest = cards.reduce((best, el) => {
+      const [y, m] = el.dataset.monthKey.split('-').map(Number)
+      const distance = Math.abs(y * 12 + m - target)
+      return !best || distance < best.distance ? { el, distance } : best
+    }, null).el
+
+    // Centrado: coincide con el snap-center de las cards, así el navegador no re-snapea a otro mes.
+    const prevBehavior = container.style.scrollBehavior
+    container.style.scrollBehavior = 'auto'
+    const containerRect = container.getBoundingClientRect()
+    const cardRect = closest.getBoundingClientRect()
+    container.scrollLeft += cardRect.left - containerRect.left - (containerRect.width - cardRect.width) / 2
+    container.style.scrollBehavior = prevBehavior
+
+    // Los meses definitivos llegan con las facturas: hasta entonces se muestra el fallback.
+    if (invoices.length > 0) didCenterCurrentMonth.current = true
+  }, [loading, invoices])
+
+  const loadClientData = async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true)
     try {
       // Advance past scheduled days and ensure future months exist (parallel with data fetching)
       const [clientData, attendanceData, invoicesData, pricing, transportPricing, recoveryData, planVersions, testData, followupData] = await Promise.all([
@@ -171,14 +203,16 @@ export default function ClientDetail() {
       ])
       // Run setup functions (non-blocking, best-effort). Los clientes no facturables
       // (beneficencia / a prueba) nunca materializan facturas: skip ensureClientMonths.
-      Promise.all([
-        advanceScheduledAttendance().catch(() => {}),
-        clientData?.isNonBillable ? Promise.resolve() : ensureClientMonths(id).catch(() => {})
-      ]).then(() => {
-        if (clientData?.isNonBillable) return
-        // Reload invoices after ensureClientMonths creates new rows
-        getClientInvoices(id).then(updated => setInvoices(updated)).catch(() => {})
-      })
+      if (!silent) {
+        Promise.all([
+          advanceScheduledAttendance().catch(() => {}),
+          clientData?.isNonBillable ? Promise.resolve() : ensureClientMonths(id).catch(() => {})
+        ]).then(() => {
+          if (clientData?.isNonBillable) return
+          // Reload invoices after ensureClientMonths creates new rows
+          getClientInvoices(id).then(updated => setInvoices(updated)).catch(() => {})
+        })
+      }
 
       setClient({ ...clientData, planVersions })
       setRecoveryCredits(recoveryData)
@@ -191,9 +225,13 @@ export default function ClientDetail() {
     } catch (error) {
       console.error('Error cargando datos del cliente:', error)
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
+
+  // Refresco sin spinner: el DOM se mantiene montado, así no se pierden los scrolls
+  // (meses, página) al marcar una falta, cobrar o facturar.
+  const refreshClientData = () => loadClientData({ silent: true })
 
   const refreshRecovery = async () => {
     try {
@@ -386,7 +424,7 @@ export default function ClientDetail() {
                 onClick={async () => {
                   if (client.deletedAt) return
                   setSyncing(true)
-                  try { await syncClientToBiller(client.id); await loadClientData() }
+                  try { await syncClientToBiller(client.id); await refreshClientData() }
                   catch (e) { window.alert(`No se pudo sincronizar con Biller: ${e.message}`) }
                   finally { setSyncing(false) }
                 }}
@@ -741,7 +779,7 @@ export default function ClientDetail() {
               reports={followups}
               professional={user?.name}
               canMutate={!client.deletedAt}
-              onRefresh={loadClientData}
+              onRefresh={refreshClientData}
             />
           )}
           {activeTab === 'tests' && (
@@ -750,7 +788,7 @@ export default function ClientDetail() {
               instances={testInstances}
               administeredBy={user?.name}
               canMutate={!client.deletedAt}
-              onRefresh={loadClientData}
+              onRefresh={refreshClientData}
             />
           )}
         </CardContent>
@@ -785,7 +823,7 @@ export default function ClientDetail() {
       </div>
 
       {/* Month cards horizontal scroll */}
-      <div className="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory" style={{ scrollBehavior: 'smooth' }}>
+      <div ref={monthsScrollRef} className="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory" style={{ scrollBehavior: 'smooth' }}>
         {invoices.length === 0 ? (
           // Fallback: show current + next 2 months while invoices load
           [new Date(), addMonths(new Date(), 1), addMonths(new Date(), 2)].map((d, i) => (
@@ -799,7 +837,7 @@ export default function ClientDetail() {
               pricingData={pricingData}
               transportPricingData={transportPricingData}
               user={user}
-              onRefresh={loadClientData}
+              onRefresh={refreshClientData}
             />
           ))
         ) : (
@@ -814,7 +852,7 @@ export default function ClientDetail() {
               pricingData={pricingData}
               transportPricingData={transportPricingData}
               user={user}
-              onRefresh={loadClientData}
+              onRefresh={refreshClientData}
             />
           ))
         )}
@@ -851,7 +889,7 @@ export default function ClientDetail() {
         onClose={() => setShowDiscountModal(false)}
         client={client}
         invoices={invoices}
-        onRefresh={loadClientData}
+        onRefresh={refreshClientData}
       />
 
       <PrepaidPromoModal
@@ -859,7 +897,7 @@ export default function ClientDetail() {
         onClose={() => setShowPromoModal(false)}
         client={client}
         invoices={invoices}
-        onRefresh={loadClientData}
+        onRefresh={refreshClientData}
       />
     </div>
   )
@@ -1040,7 +1078,7 @@ function MonthCard({ client, year, month, invoice, attendance, pricingData, tran
 
   return (
     <>
-      <Card className="flex-shrink-0 w-80 snap-center">
+      <Card data-month-key={`${year}-${month}`} className="flex-shrink-0 w-80 snap-center">
         <CardHeader className="pb-2">
           {/* Month title */}
           <h3 className="font-semibold text-gray-900 capitalize mb-2">
