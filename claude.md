@@ -140,25 +140,36 @@ src/services/
   clientId: string,
   date: string,               // YYYY-MM-DD
   shift: 'morning' | 'afternoon' | 'full_day',
-  status: 'attended' | 'unjustified_absence' | 'justified_recovered' | 
-          'justified_not_recovered' | 'recovered' | 'scheduled',
+  status: 'attended' | 'absent' | 'recovery' | 'scheduled',
+  isJustified: boolean | null,   // solo tiene sentido cuando status = 'absent'
+  isChargeable: boolean,
   notes: string
 }
 ```
 
 ### Estados de Asistencia
-| Estado | Descripción | ¿Se cobra? | Efecto en recupero |
-|--------|-------------|------------|-------------------|
-| `attended` | Asistió normalmente | ✅ Sí | - |
-| `unjustified_absence` | Falta no justificada | ✅ Sí | - |
-| `justified_recovered` | Falta justificada con recupero | ✅ Sí | +1 día recupero |
-| `justified_not_recovered` | Falta justificada sin recupero | ❌ No | - |
-| `recovered` | Usó un día de recupero | ✅ Sí | -1 día recupero |
-| `scheduled` | Día programado (futuro) | - | - |
 
-`is_chargeable` ya **no se deriva de la fecha** (antes: una falta justificada futura en un
-mes no pago se marcaba automáticamente como no cobrable). Ahora lo **elige el usuario** en
-el modal de falta, y el default es **siempre** "cobrable + recupero", sin importar el mes.
+Modelo unificado de faltas (migración 068): toda falta es `status = 'absent'`, descrita por
+los booleanos `is_justified` e `is_chargeable` — **reemplazó** al enum viejo
+(`unjustified_absence`, `justified_recovered`, `justified_not_recovered`, `recovered`). No
+escribir código nuevo contra esos valores: ya no existen como `status`.
+
+| `status` | `is_justified` | `is_chargeable` | Descripción | ¿Se cobra? | Efecto en recupero |
+|---|---|---|---|---|---|
+| `scheduled` | `null` | `true` | Día planificado a futuro, todavía no ocurrió | - | - |
+| `attended` | `null` | `true` | Asistió (incluye días pasados sin falta registrada) | ✅ Sí | - |
+| `absent` | `false` | `true` | Falta no justificada | ✅ Sí | - |
+| `absent` | `true` | `true` | Falta justificada y cobrable | ✅ Sí | +1 crédito de recupero |
+| `absent` | `true` | `false` | Falta justificada y no cobrable | ❌ No | - |
+| `recovery` | `null` | `true` | Usó un crédito de recupero | ✅ Sí | -1 crédito de recupero |
+
+Regla del recupero: se otorga **sii** justificada ∧ cobrable (`is_justified = true AND
+is_chargeable = true`).
+
+`is_chargeable` en una falta justificada (`absent` + `is_justified = true`) ya **no se
+deriva de la fecha** (antes: una falta justificada futura en un mes no pago se marcaba
+automáticamente como no cobrable). Ahora lo **elige el usuario** en el modal de falta, y el
+default es **siempre** "cobrable + recupero", sin importar el mes.
 
 ### MonthlyInvoice (Factura mensual)
 ```javascript
