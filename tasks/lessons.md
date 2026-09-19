@@ -41,3 +41,37 @@ reason'`. Resultado: la baja con motivos nuevos fallaba con 400 en producción.
 - Fix elegante: validar contra la tabla fuente de verdad
   (`EXISTS (SELECT 1 FROM deactivation_reasons WHERE key = p_reason AND is_active)`),
   no re-hardcodear la lista.
+
+## Al copiar el cuerpo de una función SQL, buscar si una migración POSTERIOR la reemplazó
+Escribiendo la migración 084 copié `register_absence` de la 068 sin chequear que la
+**069** la había reemplazado después con una guarda anti-doble-crédito (`v_has_consumed`,
+"Fix (final review #3)"). El plan mandaba copiar de la 068, así que el error viajó del
+plan a la implementación: habría revertido en producción un fix ya aplicado, re-otorgando
+un crédito de recupero ya consumido al re-marcar una falta.
+- Regla: antes de copiar el cuerpo de cualquier función, `grep -rn "<nombre>"
+  supabase/migrations/*.sql` y usar la aparición de número MÁS ALTO, no la que uno
+  recuerda. Lo mismo para vistas (`invoices_view`) y para RPCs que se editan por
+  `CREATE OR REPLACE` en varias migraciones.
+- La transcripción de memoria también falló: mi versión del cuerpo de `unregister_absence`
+  tenía cuatro diferencias con la real (mensaje de error, condición del EXISTS/DELETE,
+  `is_justified = false` en vez de `NULL`, y `reason` `'absence_undone'` en vez de
+  `'reverted_justified_absence'`). Nunca transcribir SQL de memoria: abrir el archivo.
+
+## Un tooltip con `title` nativo es casi invisible; y `display:contents` no tiene caja
+Dos errores encadenados en el mismo componente:
+1. Usé el atributo `title` nativo para mostrar el motivo de una falta. El usuario no lo
+   vio: es gris del sistema y tarda ~1s. Si se pide "tooltip en hover", hacer uno real.
+2. Al hacerlo real, el wrapper usaba `display: contents` para no romper el layout flex —
+   pero un elemento con `display: contents` **no genera caja**, así que
+   `getBoundingClientRect()` devuelve todo en cero y el tooltip aterrizó en la esquina
+   de la pantalla. Medir `firstElementChild`, no el wrapper.
+- Regla más general: un componente de posicionamiento no se da por hecho leyendo el
+  código. jsdom no hace layout, así que el test tiene que mockear
+  `getBoundingClientRect` POR ELEMENTO para reproducir el caso real (wrapper sin caja,
+  hijo con caja). Ver `src/components/ui/Tooltip.test.js`.
+
+## Verificar el estado de la DB antes de afirmar que algo no se escribió
+Dije "sigue sin haber ninguna fila escrita" sobre el aporte de directores cuando el
+usuario ya la había generado abriendo la pantalla. Lo di por sentado en vez de volver a
+consultar la base después de su mensaje. Si el usuario dice que ve algo distinto de lo
+que yo creo, la base gana: consultarla antes de responder.
