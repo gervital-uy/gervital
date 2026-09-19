@@ -956,6 +956,9 @@ function MonthCard({ client, year, month, invoice, allInvoices, attendance, pric
   const isPaid = invoice?.paymentStatus === 'paid'
   const isInvoiced = invoice?.invoiceStatus === 'invoiced'
   const canViewBilling = roleHasAccess(user?.role, 'billing') && !client?.isNonBillable
+  // El operador lee el calendario (lo necesita para coordinar Grupos y
+  // Transporte) pero no lo edita: registrar una falta mueve plata.
+  const canEditAttendance = roleHasAccess(user?.role, 'attendance_edit')
   // Overdue: unpaid and past the 11th of the invoice's month
   const dueDate = new Date(year, month, 11, 23, 59, 59)
   const isOverdue = !isPaid && today > dueDate
@@ -1038,7 +1041,7 @@ function MonthCard({ client, year, month, invoice, allInvoices, attendance, pric
   }
 
   const handleDayClick = (day) => {
-    if (isDeactivated) return
+    if (isDeactivated || !canEditAttendance) return
     const dateStr = format(day, 'yyyy-MM-dd')
     const { status, isJustified, isChargeable, isAssigned } = getDayStatus(day)
     const isWeekend = getDay(day) === 0 || getDay(day) === 6
@@ -1244,7 +1247,7 @@ function MonthCard({ client, year, month, invoice, allInvoices, attendance, pric
               const isStartDate = format(day, 'yyyy-MM-dd') === format(clientStart, 'yyyy-MM-dd')
               // Every weekday (Mon-Fri) is clickable. Recovery still requires an
               // available credit, but that is enforced inside the recovery modal.
-              const canClick = !isWeekend && !isDeactivated && (
+              const canClick = !isWeekend && !isDeactivated && canEditAttendance && (
                 isAssigned ||
                 status === 'recovery' ||
                 status === 'not_scheduled'
