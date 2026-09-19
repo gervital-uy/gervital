@@ -1097,23 +1097,29 @@ function MonthCard({ client, year, month, invoice, allInvoices, attendance, pric
     if (found.length) setCorrectionMonths(found)
   }
 
+  // Cierra el modal SOLO si salió todo bien, y propaga el error para que el modal
+  // que llamó lo muestre y quede abierto. Tragárselo hacía que "Sin permisos"
+  // (error real desde que las RPC chequean rol) pareciera una operación exitosa.
   const withProcessing = async (fn, months) => {
     setProcessing(true)
     try {
       await fn()
       await detectCorrections(months)
       await onRefresh()
+      closeModal()
     } catch (err) {
       console.error(err)
+      throw err
     } finally {
       setProcessing(false)
-      closeModal()
     }
   }
 
   const handleUndoPayment = async () => {
     setPaymentDropOpen(false)
-    await withProcessing(() => unmarkMonthPaid(client.id, year, month))
+    // No sale de un modal con lugar para el error: se muestra suelto.
+    try { await withProcessing(() => unmarkMonthPaid(client.id, year, month)) }
+    catch (e) { window.alert(e.message) }
   }
 
   const canRemoveDiscount = invoice?.paymentStatus === 'pending' && invoice?.invoiceStatus === 'pending'
@@ -1799,14 +1805,26 @@ function AbsenceModal({ isOpen, onClose, date, isPaid, onConfirm }) {
 // ConfirmModal (generic)
 // ============================================================
 function ConfirmModal({ isOpen, onClose, title, message, confirmLabel, confirmClass, onConfirm, loading, confirmDisabled }) {
+  const [error, setError] = useState('')
+
+  useEffect(() => { if (!isOpen) setError('') }, [isOpen])
+
+  // El padre cierra el modal al salir bien; si falla, queda abierto con el error.
+  const handleConfirm = async () => {
+    setError('')
+    try { await onConfirm() }
+    catch (e) { setError(e.message) }
+  }
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title}>
       <div className="space-y-4">
         <p className="text-gray-600 text-sm">{message}</p>
+        {error && <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{error}</div>}
         <div className="flex gap-3 justify-end pt-2 border-t border-gray-200">
           <Button variant="secondary" onClick={onClose}>{confirmDisabled ? 'Cerrar' : 'Cancelar'}</Button>
           {!confirmDisabled && (
-            <Button onClick={onConfirm} loading={loading} className={confirmClass}>
+            <Button onClick={handleConfirm} loading={loading} className={confirmClass}>
               {confirmLabel}
             </Button>
           )}
