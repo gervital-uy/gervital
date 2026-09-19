@@ -29,7 +29,7 @@ RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $function$
 DECLARE
   v_record_id UUID; v_credit_id UUID; v_new_balance INTEGER;
   v_is_chargeable BOOLEAN; v_grants_credit BOOLEAN;
-  v_clean_notes TEXT;
+  v_clean_notes TEXT; v_has_consumed BOOLEAN;
 BEGIN
   IF NOT is_admin_or_superadmin() THEN
     RETURN jsonb_build_object('success', false, 'error', 'Sin permisos para registrar faltas');
@@ -51,19 +51,26 @@ BEGIN
     updated_at = NOW()
   RETURNING id INTO v_record_id;
 
-  -- Re-marca idempotente: revoca cualquier crédito vivo previo de este registro
-  DELETE FROM recovery_credits WHERE grant_attendance_id = v_record_id AND status = 'available';
+  -- ¿La falta ya tiene un crédito consumido? Entonces su único recupero ya se usó:
+  -- no se otorga otro y no se toca nada de créditos.
+  SELECT EXISTS (
+    SELECT 1 FROM recovery_credits WHERE grant_attendance_id = v_record_id AND status = 'consumed'
+  ) INTO v_has_consumed;
 
-  IF v_grants_credit THEN
-    INSERT INTO recovery_credits (client_id, granted_at, expires_at, source, note, grant_attendance_id, created_by_name)
-    VALUES (p_client_id, p_date, p_date + 30, 'justified_absence', v_clean_notes, v_record_id, p_created_by)
-    RETURNING id INTO v_credit_id;
-    v_new_balance := _recovery_balance(p_client_id);
-    INSERT INTO recovery_credit_ledger (client_id, date, change, reason, attendance_record_id, balance_after, created_by_name, credit_id)
-    VALUES (p_client_id, p_date, 1, 'justified_absence', v_record_id, v_new_balance, p_created_by, v_credit_id);
+  IF NOT v_has_consumed THEN
+    -- Re-marca idempotente: revoca cualquier crédito vivo previo de este registro
+    DELETE FROM recovery_credits WHERE grant_attendance_id = v_record_id AND status = 'available';
+    IF v_grants_credit THEN
+      INSERT INTO recovery_credits (client_id, granted_at, expires_at, source, note, grant_attendance_id, created_by_name)
+      VALUES (p_client_id, p_date, p_date + 30, 'justified_absence', v_clean_notes, v_record_id, p_created_by)
+      RETURNING id INTO v_credit_id;
+      v_new_balance := _recovery_balance(p_client_id);
+      INSERT INTO recovery_credit_ledger (client_id, date, change, reason, attendance_record_id, balance_after, created_by_name, credit_id)
+      VALUES (p_client_id, p_date, 1, 'justified_absence', v_record_id, v_new_balance, p_created_by, v_credit_id);
+    END IF;
   END IF;
 
-  RETURN jsonb_build_object('success', true, 'isChargeable', v_is_chargeable, 'creditEarned', v_grants_credit);
+  RETURN jsonb_build_object('success', true, 'isChargeable', v_is_chargeable, 'creditEarned', v_grants_credit AND NOT v_has_consumed);
 END;
 $function$;
 
