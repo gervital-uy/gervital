@@ -192,3 +192,80 @@ BEGIN
   RETURN jsonb_build_object('success', true, 'recoveryDaysAvailable', v_new_balance);
 END;
 $function$;
+
+-- ── 6. Guarda de rol en unmark_day_recovery_attended ───────────────────────
+-- Cuerpo real de la migración 017 (línea 315), sin modificar salvo el prólogo
+-- de permisos que se agrega al principio del BEGIN. La UI ya la esconde, pero
+-- la RPC es SECURITY DEFINER: sin esto un operador revierte un recupero.
+CREATE OR REPLACE FUNCTION public.unmark_day_recovery_attended(p_client_id uuid, p_date date, p_created_by text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $function$
+DECLARE v_record_id UUID; v_credit_id UUID; v_new_balance INTEGER;
+BEGIN
+  IF NOT is_admin_or_superadmin() THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Sin permisos para deshacer recuperos');
+  END IF;
+
+  SELECT id INTO v_record_id FROM attendance_records
+  WHERE client_id=p_client_id AND date=p_date AND status='recovery';
+  IF v_record_id IS NULL THEN RETURN jsonb_build_object('success', false, 'error', 'No existe recupero para este día'); END IF;
+  SELECT id INTO v_credit_id FROM recovery_credits WHERE consumed_attendance_id=v_record_id;
+  IF v_credit_id IS NOT NULL THEN
+    UPDATE recovery_credits SET status='available', consumed_at=NULL, consumed_attendance_id=NULL, updated_at=NOW()
+    WHERE id=v_credit_id;
+  ELSE
+    INSERT INTO recovery_credits (client_id, granted_at, expires_at, source, created_by_name)
+    VALUES (p_client_id, CURRENT_DATE, CURRENT_DATE + 30, 'manual', p_created_by)
+    RETURNING id INTO v_credit_id;
+  END IF;
+  DELETE FROM attendance_records WHERE id=v_record_id;
+  v_new_balance := _recovery_balance(p_client_id);
+  INSERT INTO recovery_credit_ledger (client_id, date, change, reason, balance_after, created_by_name, credit_id)
+  VALUES (p_client_id, p_date, 1, 'reverted_recovery_attendance', v_new_balance, p_created_by, v_credit_id);
+  RETURN jsonb_build_object('success', true, 'recoveryDaysAvailable', v_new_balance);
+END;
+$function$;
+
+-- ── 7. Guarda de rol en add_recovery_credit ────────────────────────────────
+-- Cuerpo real de la migración 017 (línea 340). La llama RecoveryCreditsModal,
+-- que hasta ahora se abría para cualquier rol.
+CREATE OR REPLACE FUNCTION public.add_recovery_credit(p_client_id uuid, p_note text DEFAULT NULL, p_created_by text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $function$
+DECLARE v_credit_id UUID; v_new_balance INTEGER;
+BEGIN
+  IF NOT is_admin_or_superadmin() THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Sin permisos para agregar días de recupero');
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM clients WHERE id=p_client_id) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Cliente no encontrado');
+  END IF;
+  INSERT INTO recovery_credits (client_id, granted_at, expires_at, source, note, created_by_name)
+  VALUES (p_client_id, CURRENT_DATE, CURRENT_DATE + 30, 'manual', NULLIF(TRIM(p_note), ''), p_created_by)
+  RETURNING id INTO v_credit_id;
+  v_new_balance := _recovery_balance(p_client_id);
+  INSERT INTO recovery_credit_ledger (client_id, date, change, reason, balance_after, created_by_name, credit_id)
+  VALUES (p_client_id, CURRENT_DATE, 1, 'manual_add', v_new_balance, p_created_by, v_credit_id);
+  RETURN jsonb_build_object('success', true, 'recoveryDaysAvailable', v_new_balance, 'creditId', v_credit_id);
+END;
+$function$;
+
+-- ── 8. Guarda de rol en revoke_recovery_credit ─────────────────────────────
+-- Cuerpo real de la migración 017 (línea 358).
+CREATE OR REPLACE FUNCTION public.revoke_recovery_credit(p_credit_id uuid, p_created_by text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $function$
+DECLARE v_client_id UUID; v_new_balance INTEGER;
+BEGIN
+  IF NOT is_admin_or_superadmin() THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Sin permisos para revocar días de recupero');
+  END IF;
+
+  UPDATE recovery_credits SET status='revoked', revoked_at=NOW(), updated_at=NOW()
+  WHERE id=p_credit_id AND status='available'
+  RETURNING client_id INTO v_client_id;
+  IF v_client_id IS NULL THEN RETURN jsonb_build_object('success', false, 'error', 'Crédito no disponible'); END IF;
+  v_new_balance := _recovery_balance(v_client_id);
+  INSERT INTO recovery_credit_ledger (client_id, date, change, reason, balance_after, created_by_name, credit_id)
+  VALUES (v_client_id, CURRENT_DATE, -1, 'manual_revoke', v_new_balance, p_created_by, p_credit_id);
+  RETURN jsonb_build_object('success', true, 'recoveryDaysAvailable', v_new_balance);
+END;
+$function$;

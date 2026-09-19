@@ -883,11 +883,12 @@ export default function ClientDetail() {
         loading={reactivating}
       />
 
+      {/* Agregar/revocar créditos mueve plata igual que una falta: mismo gate. */}
       <RecoveryCreditsModal
         isOpen={recoveryModalOpen}
         onClose={() => setRecoveryModalOpen(false)}
         credits={recoveryCredits}
-        canMutate={!client.deletedAt}
+        canMutate={!client.deletedAt && roleHasAccess(user?.role, 'attendance_edit')}
         userName={user?.name}
         clientId={id}
         onChanged={refreshRecovery}
