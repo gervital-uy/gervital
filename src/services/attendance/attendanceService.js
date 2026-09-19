@@ -67,20 +67,22 @@ export async function advanceScheduledAttendance() {
 }
 
 /**
- * Registra una falta (única fuente de verdad server-side). El backend deriva
- * si es cobrable y si genera recupero. Ver absenceModel.deriveAbsence.
+ * Registra una falta. `isChargeable` lo elige el usuario y solo aplica a las
+ * justificadas: una injustificada se cobra siempre (ver absenceModel).
  * @param {string} clientId
  * @param {string} date - YYYY-MM-DD
  * @param {boolean} isJustified
+ * @param {boolean} isChargeable - se cobra el día (y genera recupero si es justificada)
  * @param {string} userName
  * @param {string|null} notes - Motivo (chip o texto libre)
  * @returns {Promise<{success: boolean, isChargeable: boolean, creditEarned: boolean}>}
  */
-export async function registerAbsence(clientId, date, isJustified, userName, notes = null) {
+export async function registerAbsence(clientId, date, isJustified, isChargeable, userName, notes = null) {
   const { data, error } = await supabase.rpc('register_absence', {
     p_client_id: clientId,
     p_date: date,
     p_is_justified: isJustified,
+    p_is_chargeable: isChargeable,
     p_notes: notes,
     p_created_by: userName
   })
@@ -93,12 +95,13 @@ export async function registerAbsence(clientId, date, isJustified, userName, not
  * Registra faltas en un rango; cada día asignado se evalúa por separado.
  * @returns {Promise<{success: boolean, daysMarked: number}>}
  */
-export async function registerAbsenceRange(clientId, fromDate, toDate, isJustified, userName, notes = null) {
+export async function registerAbsenceRange(clientId, fromDate, toDate, isJustified, isChargeable, userName, notes = null) {
   const { data, error } = await supabase.rpc('register_absence_range', {
     p_client_id: clientId,
     p_from_date: fromDate,
     p_to_date: toDate,
     p_is_justified: isJustified,
+    p_is_chargeable: isChargeable,
     p_notes: notes,
     p_created_by: userName
   })

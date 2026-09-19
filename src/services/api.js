@@ -103,7 +103,9 @@ export {
   markMonthInvoiced,
   unmarkMonthPaid,
   applyPlanDiscount,
-  removePlanDiscount
+  removePlanDiscount,
+  applyMonthBillingCorrection,
+  flagMonthCorrectionPending
 } from './invoices/invoiceService'
 
 // ============================================
