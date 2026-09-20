@@ -50,6 +50,7 @@ export {
 // ============================================
 export {
   getClientFollowups,
+  getLatestMotivations,
   createFollowup,
   updateFollowup,
   deleteFollowup
@@ -113,7 +114,11 @@ export {
 // ============================================
 export {
   createPrepaidPromo,
-  getPromotions
+  collectPromo,
+  uncollectPromo,
+  cancelPromo,
+  getPromotions,
+  getClientPromotions
 } from './promotions/promotionService'
 
 // ============================================
