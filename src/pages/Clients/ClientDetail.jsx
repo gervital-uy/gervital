@@ -33,7 +33,10 @@ import {
   getClientPlanVersions,
   removePlanDiscount,
   getClientTestInstances,
-  getClientFollowups
+  getClientFollowups,
+  getClientPromotions,
+  collectPromo,
+  cancelPromo
 } from '../../services/api'
 import { dayStyle, dayTooltip, outcomePreview } from '../../services/attendance/absenceModel'
 import { shouldPromptCorrection, monthsInRange } from '../../services/invoices/billingCorrection'
@@ -54,7 +57,9 @@ import { isInactiveOn } from '../../services/clients/inactivityPeriods'
 import RecoveryCreditsModal from './RecoveryCreditsModal'
 import ClientTests from './ClientTests'
 import ClientFollowups from './ClientFollowups'
-import { MARITAL_STATUS_OPTIONS, RESIDENCE_TYPE_OPTIONS, MEDICAL_HISTORY_CONDITIONS, DIAGNOSIS_TYPE_OPTIONS, CHARACTER_OPTIONS, documentTypeLabel } from '../../services/clients/medicalConstants'
+import { motivationConfig, latestMotivation } from '../../services/clients/motivation'
+import { promoMonthIndex, promoMonthCollection } from '../../services/promotions/promotionsView'
+import { MARITAL_STATUS_OPTIONS, RESIDENCE_TYPE_OPTIONS, MEDICAL_HISTORY_CONDITIONS, DIAGNOSIS_TYPE_OPTIONS, CHARACTER_OPTIONS, documentTypeLabel, formatDocumentNumber } from '../../services/clients/medicalConstants'
 
 const SCHEDULE_LABELS = {
   morning: 'Mañana',
@@ -138,6 +143,10 @@ export default function ClientDetail() {
   const [planHistoryOpen, setPlanHistoryOpen] = useState(false)
   const [testInstances, setTestInstances] = useState([])
   const [followups, setFollowups] = useState([])
+  const [promotions, setPromotions] = useState([])
+
+  // Motivación vigente: la del informe de seguimiento más reciente que la tenga cargada
+  const motivation = motivationConfig(latestMotivation(followups))
 
   const optionsMenuRef = useRef(null)
   const avatarInputRef = useRef(null)
@@ -193,7 +202,7 @@ export default function ClientDetail() {
     if (!silent) setLoading(true)
     try {
       // Advance past scheduled days and ensure future months exist (parallel with data fetching)
-      const [clientData, attendanceData, invoicesData, pricing, transportPricing, recoveryData, planVersions, testData, followupData] = await Promise.all([
+      const [clientData, attendanceData, invoicesData, pricing, transportPricing, recoveryData, planVersions, testData, followupData, promoData] = await Promise.all([
         getClientById(id),
         getClientAttendance(id),
         getClientInvoices(id),
@@ -202,7 +211,10 @@ export default function ClientDetail() {
         getRecoveryCredits(id),
         getClientPlanVersions(id),
         getClientTestInstances(id),
-        getClientFollowups(id)
+        getClientFollowups(id),
+        // Informativa: el operador no lee promotions (RLS), y sin promos el
+        // calendario se muestra igual.
+        getClientPromotions(id).catch(() => [])
       ])
       // Run setup functions (non-blocking, best-effort). Los clientes no facturables
       // (beneficencia / a prueba) nunca materializan facturas: skip ensureClientMonths.
@@ -223,6 +235,7 @@ export default function ClientDetail() {
       setInvoices(invoicesData)
       setTestInstances(testData)
       setFollowups(followupData)
+      setPromotions(promoData)
       setPricingData(pricing)
       setTransportPricingData(transportPricing)
     } catch (error) {
@@ -526,6 +539,18 @@ export default function ClientDetail() {
             </div>
             <div className="h-8 w-px bg-gray-200" />
             <div>
+              <p className="text-sm text-gray-500">Motivación</p>
+              {motivation ? (
+                <span className={`inline-flex items-center gap-1.5 mt-1 px-3 py-1 rounded-lg text-sm font-semibold ${motivation.chip}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${motivation.dot}`} />
+                  {motivation.label}
+                </span>
+              ) : (
+                <span className="inline-block mt-1 px-3 py-1 rounded-lg text-sm font-semibold bg-gray-100 text-gray-400">Sin registrar</span>
+              )}
+            </div>
+            <div className="h-8 w-px bg-gray-200" />
+            <div>
               <p className="text-sm text-gray-500">Plan</p>
               <p className="font-semibold text-gray-900">
                 {client.plan.frequency}x por semana · {SCHEDULE_LABELS[client.plan.schedule]}
@@ -620,7 +645,7 @@ export default function ClientDetail() {
               </div>
               <div>
                 <p className="text-sm text-gray-500">{documentTypeLabel(client.documentType)}</p>
-                <p className="font-medium text-gray-900">{client.documentNumber || '-'}</p>
+                <p className="font-medium text-gray-900">{formatDocumentNumber(client.documentNumber, client.documentType) || '-'}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-500">Email</p>
@@ -843,6 +868,7 @@ export default function ClientDetail() {
               month={d.getMonth()}
               invoice={null}
               allInvoices={invoices}
+              promotions={promotions}
               attendance={attendance}
               pricingData={pricingData}
               transportPricingData={transportPricingData}
@@ -859,6 +885,7 @@ export default function ClientDetail() {
               month={inv.month}
               invoice={inv}
               allInvoices={invoices}
+              promotions={promotions}
               attendance={attendance}
               pricingData={pricingData}
               transportPricingData={transportPricingData}
@@ -918,7 +945,7 @@ export default function ClientDetail() {
 // ============================================================
 // MonthCard
 // ============================================================
-function MonthCard({ client, year, month, invoice, allInvoices, attendance, pricingData, transportPricingData, user, onRefresh }) {
+function MonthCard({ client, year, month, invoice, allInvoices, promotions, attendance, pricingData, transportPricingData, user, onRefresh }) {
   const [processing, setProcessing] = useState(false)
   // Modal state: null | 'payment' | 'undoPayment' | 'invoice' | 'absence' | 'undoAbsence' | 'recovery' | 'undoRecovery'
   const [modal, setModal] = useState(null)
@@ -1015,6 +1042,20 @@ function MonthCard({ client, year, month, invoice, allInvoices, attendance, pric
   const displayAmount = isFinalized
     ? (invoice.paidAmount ?? invoice.chargeableAmount)
     : liveChargeableAmount
+  // Promo prepaga del mes. El paquete entero se cobra en el mes ancla; los meses
+  // siguientes ya están cubiertos y no cobran nada.
+  const promo = (promotions || []).find(p => promoMonthIndex(p, year, month) != null) || null
+  const promoIndex = promo ? promoMonthIndex(promo, year, month) : null
+  const promoLength = promo
+    ? (promo.endYear * 12 + promo.endMonth) - (promo.startYear * 12 + promo.startMonth) + 1
+    : null
+  const { due: amountDue, struck: struckAmount } = promoMonthCollection({
+    promoIndex,
+    promoTotalAmount: promo?.totalAmount,
+    monthAmount: displayAmount
+  })
+  const isPrepaid = invoice?.paymentStatus === 'prepaid'
+
   // Descuento por vacaciones sobre los días facturados (0 si el día extra del mes lo absorbe).
   const billedWithoutVacation = Math.max(0, Math.min(plannedDays, daysPerMonth))
   const vacationPct = billedWithoutVacation > billedDays
@@ -1145,6 +1186,28 @@ function MonthCard({ client, year, month, invoice, allInvoices, attendance, pric
     catch (e) { window.alert(e.message) }
   }
 
+  // Cancelar una promo es destructivo: deshace el cobro del paquete COMPLETO,
+  // no sólo el de este mes. Por eso la confirmación enumera lo que se pierde.
+  const canManagePromo = !!promo && roleHasAccess(user?.role, 'promotions')
+  const promoRangeLabel = promo
+    ? `${format(new Date(promo.startYear, promo.startMonth, 1), 'MMM yyyy', { locale: es })} – ${format(new Date(promo.endYear, promo.endMonth, 1), 'MMM yyyy', { locale: es })}`
+    : ''
+  const handleCancelPromo = async () => {
+    const undo = promo.paidDate
+      ? `Se deshace el cobro de ${formatCurrency(promo.paidAmount ?? promo.totalAmount)} y los ${promoLength} meses vuelven a pendiente sin descuento.`
+      : `Los ${promoLength} meses vuelven a pendiente sin descuento.`
+    if (!window.confirm(`¿Cancelar la promo ${promoRangeLabel}?\n\n${undo}`)) return
+    try { await withProcessing(() => cancelPromo(promo.id)) }
+    catch (e) { window.alert(e.message) }
+  }
+
+  // Cobrar el mes ancla de una promo cobra el paquete entero de una.
+  const isPromoAnchorToCollect = !!promo && promoIndex === 1 && !promo.paidDate
+  const handleConfirmPayment = (amount, method, notes, paidDate) =>
+    withProcessing(() => isPromoAnchorToCollect
+      ? collectPromo(promo.id, paidDate, amount, method, notes)
+      : markMonthPaid(client.id, year, month, amount, method, notes, paidDate))
+
   return (
     <>
       <Card data-month-key={`${year}-${month}`} className="flex-shrink-0 w-80 snap-center">
@@ -1153,7 +1216,21 @@ function MonthCard({ client, year, month, invoice, allInvoices, attendance, pric
           <h3 className="font-semibold text-gray-900 capitalize mb-2">
             {format(new Date(year, month, 1), 'MMMM yyyy', { locale: es })}
             {isProrated && <span className="ml-2 text-xs font-normal text-blue-600">(prorrateado)</span>}
-            {canViewBilling && invoice?.discountPercent > 0 && (
+            {canViewBilling && promo && (
+              <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 align-middle">
+                {promoIndex}/{promoLength} | {promo.discountPercent}%
+                {canManagePromo && (
+                  <button
+                    onClick={handleCancelPromo}
+                    className="ml-0.5 text-emerald-600 hover:text-emerald-900"
+                    title={`Cancelar promo ${promoRangeLabel}`}
+                  >
+                    ✕
+                  </button>
+                )}
+              </span>
+            )}
+            {canViewBilling && !promo && invoice?.discountPercent > 0 && (
               <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium bg-violet-50 text-violet-700 border border-violet-200 align-middle">
                 −{invoice.discountPercent}%
                 {canRemoveDiscount && (
@@ -1181,7 +1258,16 @@ function MonthCard({ client, year, month, invoice, allInvoices, attendance, pric
           {/* Payment + Invoice badges */}
           {canViewBilling && (
           <div className="flex gap-2">
-            {/* Payment badge */}
+            {/* Payment badge. Un mes prepago no debe nada: es informativo y la
+                acción de cobro vive sólo en el mes ancla de la promo. */}
+            {isPrepaid ? (
+              <div
+                className="flex-1 flex items-center justify-center px-2 py-1 rounded-lg text-xs font-medium border bg-violet-50 text-violet-700 border-violet-200"
+                title={promo ? `Cubierto por el prepago de ${format(new Date(promo.startYear, promo.startMonth, 1), 'MMMM yyyy', { locale: es })}` : 'Cubierto por un prepago'}
+              >
+                Prepago
+              </div>
+            ) : (
             <div className="relative flex-1" ref={paymentDropRef}>
               <button
                 onClick={() => setPaymentDropOpen(!paymentDropOpen)}
@@ -1226,6 +1312,7 @@ function MonthCard({ client, year, month, invoice, allInvoices, attendance, pric
                 </div>
               )}
             </div>
+            )}
 
             {/* Invoice badge → abre el modal de emisión/info */}
             <div className="flex-1">
@@ -1259,8 +1346,11 @@ function MonthCard({ client, year, month, invoice, allInvoices, attendance, pric
               <span className="text-xs text-orange-600">(-{vacationPct}%)</span>
             )}
             {canViewBilling && (
-              <span className="ml-auto text-base font-bold text-gray-900">
-                {formatCurrency(displayAmount)}
+              <span className="ml-auto flex items-baseline gap-1.5">
+                <span className="text-base font-bold text-gray-900">{formatCurrency(amountDue)}</span>
+                {struckAmount != null && (
+                  <span className="text-sm text-gray-400 line-through">{formatCurrency(struckAmount)}</span>
+                )}
               </span>
             )}
           </div>
@@ -1340,11 +1430,9 @@ function MonthCard({ client, year, month, invoice, allInvoices, attendance, pric
         clientId={client.id}
         year={year}
         month={month}
-        liveAmount={liveChargeableAmount}
+        liveAmount={amountDue}
         userName={user?.name}
-        onConfirm={(amount, method, notes, paidDate) =>
-          withProcessing(() => markMonthPaid(client.id, year, month, amount, method, notes, paidDate))
-        }
+        onConfirm={handleConfirmPayment}
       />
 
       {/* ── InvoiceModal (marca manual, fallback) ── */}
