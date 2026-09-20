@@ -29,9 +29,18 @@ export default function ChurnBoard() {
   const [selectedCard, setSelectedCard] = useState(null)
   const [reasonsByKey, setReasonsByKey] = useState({})
   const [managerOpen, setManagerOpen] = useState(false)
-  const [daysFilterEnabled, setDaysFilterEnabled] = useState(true)
-  const [maxDaysValue, setMaxDaysValue] = useState(DEFAULT_MAX_DAYS)
+  // El filtro de antigüedad se recuerda entre sesiones. Default (sin nada
+  // guardado): ocultar los perdidos de más de DEFAULT_MAX_DAYS días.
+  const [daysFilterEnabled, setDaysFilterEnabled] = useState(
+    () => localStorage.getItem('churn.daysFilterEnabled') !== '0'
+  )
+  const [maxDaysValue, setMaxDaysValue] = useState(
+    () => localStorage.getItem('churn.maxDays') ?? DEFAULT_MAX_DAYS
+  )
   const [onlyTrial, setOnlyTrial] = useState(false)
+
+  useEffect(() => { localStorage.setItem('churn.daysFilterEnabled', daysFilterEnabled ? '1' : '0') }, [daysFilterEnabled])
+  useEffect(() => { localStorage.setItem('churn.maxDays', maxDaysValue) }, [maxDaysValue])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
