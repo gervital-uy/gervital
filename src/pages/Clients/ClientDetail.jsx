@@ -58,7 +58,7 @@ import RecoveryCreditsModal from './RecoveryCreditsModal'
 import ClientTests from './ClientTests'
 import ClientFollowups from './ClientFollowups'
 import { motivationConfig, latestMotivation } from '../../services/clients/motivation'
-import { promoMonthIndex, promoMonthCollection } from '../../services/promotions/promotionsView'
+import { promoMonthIndex, promoMonthCollection, promoPackageAmount } from '../../services/promotions/promotionsView'
 import { MARITAL_STATUS_OPTIONS, RESIDENCE_TYPE_OPTIONS, MEDICAL_HISTORY_CONDITIONS, DIAGNOSIS_TYPE_OPTIONS, CHARACTER_OPTIONS, documentTypeLabel, formatDocumentNumber } from '../../services/clients/medicalConstants'
 
 const SCHEDULE_LABELS = {
@@ -1049,10 +1049,16 @@ function MonthCard({ client, year, month, invoice, allInvoices, promotions, atte
   const promoLength = promo
     ? (promo.endYear * 12 + promo.endMonth) - (promo.startYear * 12 + promo.startMonth) + 1
     : null
+  // El nominal del mes es el valor de SU servicio, no lo que se cobró: en el mes
+  // ancla paidAmount es el paquete entero (se tacharía a sí mismo) y en un mes
+  // prepago es 0. El snapshot del mes vive en chargeableAmount.
+  const monthNominal = isFinalized
+    ? (invoice.chargeableAmount ?? liveChargeableAmount)
+    : liveChargeableAmount
   const { due: amountDue, struck: struckAmount } = promoMonthCollection({
     promoIndex,
-    promoTotalAmount: promo?.totalAmount,
-    monthAmount: displayAmount
+    promoTotalAmount: promoPackageAmount(promo),
+    monthAmount: promo ? monthNominal : displayAmount
   })
   const isPrepaid = invoice?.paymentStatus === 'prepaid'
 

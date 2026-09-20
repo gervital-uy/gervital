@@ -1,5 +1,5 @@
 import {
-  promoOrdinal, promoState, promoMonthIndex, promoMonthCollection, promoKpis
+  promoOrdinal, promoState, promoMonthIndex, promoMonthCollection, promoPackageAmount, promoKpis
 } from './promotionsView'
 
 // month es 0-indexed (0 = enero), salvo dentro de 'YYYY-MM-DD'.
@@ -71,11 +71,36 @@ describe('promoMonthCollection', () => {
     expect(promoMonthCollection({ promoIndex: null, promoTotalAmount: null, monthAmount: 27000 }))
       .toEqual({ due: 27000, struck: null })
   })
+  test('el tachado es el nominal del mes, nunca el paquete', () => {
+    // Regresión: el ancla tachaba su propio total ($81.000 junto a $81.000)
+    // porque se le pasaba el monto cobrado en vez del valor del mes.
+    const anchor = promoMonthCollection({ promoIndex: 1, promoTotalAmount: 81000, monthAmount: 27000 })
+    expect(anchor.struck).toBe(27000)
+    expect(anchor.struck).not.toBe(anchor.due)
+    // Y un mes prepago tacha su nominal, no el $0 que se cobra.
+    expect(promoMonthCollection({ promoIndex: 2, promoTotalAmount: 81000, monthAmount: 27000 }).struck).toBe(27000)
+  })
+
   test('tolera montos ausentes', () => {
     expect(promoMonthCollection({ promoIndex: null, promoTotalAmount: null, monthAmount: null }))
       .toEqual({ due: 0, struck: null })
     expect(promoMonthCollection({ promoIndex: 1, promoTotalAmount: null, monthAmount: 27000 }))
       .toEqual({ due: 0, struck: 27000 })
+  })
+})
+
+describe('promoPackageAmount', () => {
+  test('sin cobrar muestra el pactado', () => {
+    expect(promoPackageAmount(promo({ totalAmount: 81000, paidDate: null, paidAmount: null }))).toBe(81000)
+  })
+  test('cobrada muestra lo que realmente entró, aunque difiera del pactado', () => {
+    expect(promoPackageAmount(promo({ totalAmount: 81000, paidDate: '2026-06-05', paidAmount: 80000 }))).toBe(80000)
+  })
+  test('cobrada sin monto cae al pactado', () => {
+    expect(promoPackageAmount(promo({ totalAmount: 81000, paidDate: '2026-06-05', paidAmount: null }))).toBe(81000)
+  })
+  test('sin promo, 0', () => {
+    expect(promoPackageAmount(null)).toBe(0)
   })
 })
 

@@ -41,6 +41,14 @@ export function promoMonthCollection({ promoIndex, promoTotalAmount, monthAmount
   return { due: promoIndex === 1 ? total : 0, struck: month }
 }
 
+// Monto del paquete a mostrar: una vez cobrada manda lo que realmente entró
+// (puede diferir del pactado si se ajustó el monto al cobrar); antes, el pactado.
+export function promoPackageAmount(promo) {
+  if (!promo) return 0
+  if (promo.paidDate && promo.paidAmount != null) return Number(promo.paidAmount) || 0
+  return Number(promo.totalAmount) || 0
+}
+
 // paidDate 'YYYY-MM-DD' -> ordinal de su mes
 const paidOrdinal = (paidDate) => {
   if (!paidDate) return null
