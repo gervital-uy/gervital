@@ -75,3 +75,21 @@ Dije "sigue sin haber ninguna fila escrita" sobre el aporte de directores cuando
 usuario ya la había generado abriendo la pantalla. Lo di por sentado en vez de volver a
 consultar la base después de su mensaje. Si el usuario dice que ve algo distinto de lo
 que yo creo, la base gana: consultarla antes de responder.
+
+## El grep para "¿cuál es la definición vigente?" tiene que ser exhaustivo, y la base manda
+Reincidencia de la lección anterior, con un modo de fallo nuevo. Al escribir la migración
+088 hice `grep -rln ... | tail -2` y leí "028" como la versión vigente de
+`get_dashboard_finance_series`. El listado completo era 027, 028, 042, 048 y **052**: la
+vigente era la 052. Reemplacé la función con un cuerpo derivado de la 028 y perdí en
+producción el filtro `c.client_type = 'regular'` del CTE de previsto (que habían agregado
+las migraciones 042 y 048). El previsto de agosto 2026 pasó de 1.633.040 a 1.663.770:
+clientes de caridad y a prueba sumando al ingreso previsto.
+- Lo caché sólo porque comparé los números antes y después y me llamó la atención que el
+  cobrado diera EXACTAMENTE igual: ese "no cambió nada" era la pista de que la función que
+  yo creía estar reemplazando no era la que estaba viva.
+- Regla: antes de reemplazar cualquier función, leer la definición viva de la base:
+  `SELECT pg_get_functiondef(oid) FROM pg_proc WHERE proname = '<nombre>'`. Es la única
+  fuente infalible — el grep sobre migraciones es un índice, no la verdad. Si igual se
+  greppea, `| sort` y mirar el MAYOR; nunca `tail -N` sobre un listado sin ordenar.
+- Regla 2: medir SIEMPRE una métrica de control antes y después de tocar una función de
+  agregación, y del lado que se supone que NO cambia (acá: previsto), no sólo del que sí.
