@@ -1,5 +1,5 @@
-// Pure helpers for the promotions dashboard section + cobranza struck display.
-// A month is identified by its ordinal: year * 12 + month (month is 0-indexed).
+// Helpers puros de promociones. Un mes se identifica por su ordinal:
+// year * 12 + month (month 0-indexed).
 
 export function promoOrdinal(year, month) {
   return year * 12 + month
@@ -8,26 +8,40 @@ export function promoOrdinal(year, month) {
 const startOrd = (p) => promoOrdinal(p.startYear, p.startMonth)
 const endOrd = (p) => promoOrdinal(p.endYear, p.endMonth)
 
-// Classify each promo relative to a reference month.
-// - active:    ref within [start, end]
-// - upcoming:  starts after ref, OR ends at ref or ref+1 (last month -> renewal window)
-// - historical: ends before ref
-export function classifyPromotions(promos, refYear, refMonth) {
+// Estado ÚNICO de una promo respecto de un mes de referencia. Devolver un solo
+// valor es lo que impide que la misma promo aparezca en dos listas del dashboard.
+// - upcoming: todavía no arrancó
+// - expiring: vigente y termina este mes o el próximo (ventana de renovación)
+// - active:   vigente, sin urgencia
+// - expired:  terminó
+export function promoState(promo, refYear, refMonth) {
   const ref = promoOrdinal(refYear, refMonth)
-  const active = []
-  const upcoming = []
-  const historical = []
-  for (const p of promos || []) {
-    const s = startOrd(p)
-    const e = endOrd(p)
-    if (ref >= s && ref <= e) active.push(p)
-    if (s > ref || e === ref || e === ref + 1) upcoming.push(p)
-    if (e < ref) historical.push(p)
-  }
-  return { active, upcoming, historical }
+  const s = startOrd(promo)
+  const e = endOrd(promo)
+  if (s > ref) return 'upcoming'
+  if (e < ref) return 'expired'
+  return e <= ref + 1 ? 'expiring' : 'active'
 }
 
-// paidDate 'YYYY-MM-DD' -> ordinal of its month
+// Posición 1-based del mes dentro de la promo, o null si cae fuera del rango.
+export function promoMonthIndex(promo, year, month) {
+  const ord = promoOrdinal(year, month)
+  const s = startOrd(promo)
+  if (ord < s || ord > endOrd(promo)) return null
+  return ord - s + 1
+}
+
+// Cuánto se cobra en un mes y qué nominal se muestra tachado al lado.
+// El paquete entero se cobra en el mes ancla; el resto de los meses no cobran
+// nada porque ya están cubiertos. Un mes sin promo cobra lo suyo.
+export function promoMonthCollection({ promoIndex, promoTotalAmount, monthAmount }) {
+  const month = Number(monthAmount) || 0
+  if (promoIndex == null) return { due: month, struck: null }
+  const total = Number(promoTotalAmount) || 0
+  return { due: promoIndex === 1 ? total : 0, struck: month }
+}
+
+// paidDate 'YYYY-MM-DD' -> ordinal de su mes
 const paidOrdinal = (paidDate) => {
   if (!paidDate) return null
   const [y, m] = String(paidDate).slice(0, 10).split('-').map(Number)
@@ -36,28 +50,19 @@ const paidOrdinal = (paidDate) => {
 
 export function promoKpis(promos, refYear, refMonth) {
   const ref = promoOrdinal(refYear, refMonth)
-  const { active, upcoming } = classifyPromotions(promos, refYear, refMonth)
+  const states = (promos || []).map(p => ({ promo: p, state: promoState(p, refYear, refMonth) }))
+  const current = states.filter(s => s.state === 'active' || s.state === 'expiring')
+  // Cash real: sólo promos efectivamente cobradas en el mes de referencia.
   const prepaidCashInPeriod = (promos || [])
-    .filter(p => paidOrdinal(p.paidDate) === ref)
-    .reduce((s, p) => s + (Number(p.paidAmount) || 0), 0)
-  // Descuento otorgado: ahorro REAL (solo asistencia) guardado en la promo al crearla.
-  // No se reconstruye desde paidAmount porque ese total incluye transporte sin descuento.
-  const totalDiscountGranted = active.reduce((s, p) => s + (Number(p.discountAmount) || 0), 0)
+    .filter(p => p.paidDate && paidOrdinal(p.paidDate) === ref)
+    .reduce((sum, p) => sum + (Number(p.paidAmount) || 0), 0)
+  // Descuento otorgado: ahorro REAL (sólo asistencia), guardado al crear la promo.
+  const totalDiscountGranted = current
+    .reduce((sum, { promo }) => sum + (Number(promo.discountAmount) || 0), 0)
   return {
-    activeCount: active.length,
+    activeCount: states.filter(s => s.state === 'active').length,
     prepaidCashInPeriod,
     totalDiscountGranted: Math.round(totalDiscountGranted),
-    upcomingCount: upcoming.length
+    expiringCount: states.filter(s => s.state === 'expiring').length
   }
-}
-
-// Cobranza row display: a prepaid promo month whose cash was attributed to another month
-// (cash_collected == 0 while it was actually paid) shows the notional amount struck-through.
-export function promoCashRow(row) {
-  const isPromo = row?.promoTotal != null
-  const paid = row?.paymentStatus === 'paid'
-  const cash = Number(row?.cashCollected) || 0
-  const notional = Number(row?.paidAmount) || 0
-  const struck = isPromo && paid && cash === 0 && notional > 0
-  return { struck, notional, cash }
 }

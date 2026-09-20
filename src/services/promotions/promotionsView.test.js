@@ -1,13 +1,12 @@
 import {
-  promoOrdinal, classifyPromotions, promoKpis, promoCashRow
+  promoOrdinal, promoState, promoMonthIndex, promoMonthCollection, promoKpis
 } from './promotionsView'
 
-// month is 0-indexed everywhere (0 = enero ... 11 = diciembre), except inside
-// 'YYYY-MM-DD' date strings, where the month segment is 1-indexed (calendar convention).
+// month es 0-indexed (0 = enero), salvo dentro de 'YYYY-MM-DD'.
 const promo = (over) => ({
   id: 'p', clientId: 'c', discountPercent: 15,
   startYear: 2026, startMonth: 5, endYear: 2026, endMonth: 7, // 2026-06 .. 2026-08
-  paidDate: '2026-06-05', paidAmount: 30000, discountAmount: 4500, ...over
+  paidDate: null, paidAmount: null, totalAmount: 90000, discountAmount: 4500, ...over
 })
 
 describe('promoOrdinal', () => {
@@ -17,91 +16,102 @@ describe('promoOrdinal', () => {
   })
 })
 
-describe('classifyPromotions', () => {
-  test('ref dentro del rango, lejos del final -> active (y no upcoming/historical)', () => {
-    // promo() default: 2026-06 .. 2026-08. ref = 2026-06 (month 5, 0-indexed).
-    // e (2026-08 = 24319) no coincide con ref (24317) ni con ref+1 (24318), asi que
-    // no dispara la regla de "por vencer".
-    const { active, upcoming, historical } = classifyPromotions([promo()], 2026, 5)
-    expect(active).toHaveLength(1)
-    expect(upcoming).toHaveLength(0)
-    expect(historical).toHaveLength(0)
+describe('promoState', () => {
+  test('empieza después del ref -> upcoming', () => {
+    expect(promoState(promo({ startYear: 2026, startMonth: 9, endYear: 2026, endMonth: 11 }), 2026, 6)).toBe('upcoming')
   })
-
-  test('rango terminado antes del ref -> historical', () => {
-    const { historical } = classifyPromotions(
-      [promo({ startYear: 2026, startMonth: 0, endYear: 2026, endMonth: 2 })], // 2026-01..2026-03
-      2026, 6 // ref = 2026-07
-    )
-    expect(historical).toHaveLength(1)
+  test('termina antes del ref -> expired', () => {
+    expect(promoState(promo({ startYear: 2026, startMonth: 0, endYear: 2026, endMonth: 2 }), 2026, 6)).toBe('expired')
   })
-
-  test('rango que empieza en el futuro -> upcoming', () => {
-    const { upcoming, active, historical } = classifyPromotions(
-      [promo({ startYear: 2026, startMonth: 9, endYear: 2026, endMonth: 11 })], // 2026-10..2026-12
-      2026, 6 // ref = 2026-07
-    )
-    expect(upcoming).toHaveLength(1)
-    expect(active).toHaveLength(0)
-    expect(historical).toHaveLength(0)
+  test('dentro del rango y lejos del final -> active', () => {
+    expect(promoState(promo(), 2026, 5)).toBe('active')
   })
-
-  test('activa que termina en el ref tambien cuenta como upcoming (ultimo mes)', () => {
-    const { active, upcoming } = classifyPromotions(
-      [promo({ startYear: 2026, startMonth: 4, endYear: 2026, endMonth: 6 })], // 2026-05..2026-07
-      2026, 6 // ref = 2026-07 = end month
-    )
-    expect(active).toHaveLength(1)
-    expect(upcoming).toHaveLength(1)
+  test('termina en el ref -> expiring', () => {
+    expect(promoState(promo(), 2026, 7)).toBe('expiring')
   })
+  test('termina en ref+1 -> expiring', () => {
+    expect(promoState(promo(), 2026, 6)).toBe('expiring')
+  })
+  test('devuelve un solo estado: nunca active y expiring a la vez', () => {
+    const states = [5, 6, 7].map(m => promoState(promo(), 2026, m))
+    expect(states).toEqual(['active', 'expiring', 'expiring'])
+  })
+  test('cruza el año correctamente', () => {
+    const p = promo({ startYear: 2026, startMonth: 11, endYear: 2027, endMonth: 1 }) // dic .. feb
+    expect(promoState(p, 2026, 10)).toBe('upcoming')
+    expect(promoState(p, 2026, 11)).toBe('active')
+    expect(promoState(p, 2027, 0)).toBe('expiring')
+    expect(promoState(p, 2027, 2)).toBe('expired')
+  })
+})
 
-  test('activa que termina en ref+1 tambien cuenta como upcoming', () => {
-    const { active, upcoming } = classifyPromotions(
-      [promo({ startYear: 2026, startMonth: 4, endYear: 2026, endMonth: 6 })], // 2026-05..2026-07
-      2026, 5 // ref = 2026-06, end month (7) = ref+1
-    )
-    expect(active).toHaveLength(1)
-    expect(upcoming).toHaveLength(1)
+describe('promoMonthIndex', () => {
+  test('1-based dentro del rango', () => {
+    expect(promoMonthIndex(promo(), 2026, 5)).toBe(1)
+    expect(promoMonthIndex(promo(), 2026, 7)).toBe(3)
+  })
+  test('null fuera del rango', () => {
+    expect(promoMonthIndex(promo(), 2026, 4)).toBeNull()
+    expect(promoMonthIndex(promo(), 2026, 8)).toBeNull()
+  })
+})
+
+describe('promoMonthCollection', () => {
+  test('el mes ancla cobra el paquete entero y tacha su nominal', () => {
+    expect(promoMonthCollection({ promoIndex: 1, promoTotalAmount: 81000, monthAmount: 27000 }))
+      .toEqual({ due: 81000, struck: 27000 })
+  })
+  test('los meses siguientes no cobran nada', () => {
+    expect(promoMonthCollection({ promoIndex: 2, promoTotalAmount: 81000, monthAmount: 27000 }))
+      .toEqual({ due: 0, struck: 27000 })
+    expect(promoMonthCollection({ promoIndex: 3, promoTotalAmount: 81000, monthAmount: 27000 }))
+      .toEqual({ due: 0, struck: 27000 })
+  })
+  test('un mes sin promo cobra lo suyo y no tacha nada', () => {
+    expect(promoMonthCollection({ promoIndex: null, promoTotalAmount: null, monthAmount: 27000 }))
+      .toEqual({ due: 27000, struck: null })
+  })
+  test('tolera montos ausentes', () => {
+    expect(promoMonthCollection({ promoIndex: null, promoTotalAmount: null, monthAmount: null }))
+      .toEqual({ due: 0, struck: null })
+    expect(promoMonthCollection({ promoIndex: 1, promoTotalAmount: null, monthAmount: 27000 }))
+      .toEqual({ due: 0, struck: 27000 })
   })
 })
 
 describe('promoKpis', () => {
-  test('cash del periodo suma solo paidDate en el mes ref; descuento y conteos', () => {
+  test('cuenta activas y por vencer por separado, sin solaparse', () => {
     const promos = [
-      // 2026-06..2026-08, pagada en junio -> activa en ref y su pago cae en el mes ref
-      promo({ id: 'a', paidDate: '2026-06-05', paidAmount: 30000, discountAmount: 4500 }),
-      // 2026-02..2026-04, ya termino antes del ref -> historical, no activa
-      promo({
-        id: 'b', paidDate: '2026-05-20', paidAmount: 20000, discountAmount: 2000,
-        startYear: 2026, startMonth: 1, endYear: 2026, endMonth: 3
-      }),
-      // 2026-10..2026-12, arranca despues del ref -> upcoming, no activa
-      promo({
-        id: 'c', paidDate: '2026-10-01', paidAmount: 0, discountAmount: 6000,
-        startYear: 2026, startMonth: 9, endYear: 2026, endMonth: 11
-      })
+      promo({ id: 'a' }),                                                             // active en 2026-05
+      promo({ id: 'b', startYear: 2026, startMonth: 4, endYear: 2026, endMonth: 5 }), // termina en el ref -> expiring
+      promo({ id: 'c', startYear: 2026, startMonth: 9, endYear: 2026, endMonth: 11 }) // upcoming
     ]
-    const k = promoKpis(promos, 2026, 5) // ref = 2026-06 (month 5, 0-indexed)
+    const k = promoKpis(promos, 2026, 5)
+    expect(k.activeCount).toBe(1)
+    expect(k.expiringCount).toBe(1)
+  })
 
-    expect(k.activeCount).toBe(1) // solo 'a' esta activa en el ref ('b' ya termino, 'c' no empezo)
-    expect(k.prepaidCashInPeriod).toBe(30000) // solo 'a' tiene paidDate en el mes de ref (2026-06)
-    expect(k.upcomingCount).toBe(1) // solo 'c' arranca en el futuro
-    // descuento otorgado = discountAmount de las promos activas -> solo 'a' (ahorro real de asistencia)
-    expect(k.totalDiscountGranted).toBe(4500)
+  test('el descuento otorgado suma sólo las promos vigentes (activas + por vencer)', () => {
+    const promos = [
+      promo({ id: 'a', discountAmount: 4500 }),                                                             // active
+      promo({ id: 'b', startYear: 2026, startMonth: 4, endYear: 2026, endMonth: 5, discountAmount: 1000 }),  // expiring
+      promo({ id: 'c', startYear: 2025, startMonth: 0, endYear: 2025, endMonth: 2, discountAmount: 9999 })   // expired
+    ]
+    expect(promoKpis(promos, 2026, 5).totalDiscountGranted).toBe(5500)
   })
-})
 
-describe('promoCashRow', () => {
-  test('mes prepago con cash atribuido a otro mes -> struck', () => {
-    const r = promoCashRow({ promoTotal: 3, paymentStatus: 'paid', cashCollected: 0, paidAmount: 12000 })
-    expect(r).toEqual({ struck: true, notional: 12000, cash: 0 })
+  test('prepaidCashInPeriod sólo cuenta promos COBRADAS en el mes', () => {
+    const promos = [
+      promo({ id: 'a', paidDate: '2026-06-05', paidAmount: 90000 }),
+      promo({ id: 'b', paidDate: null, paidAmount: null }),            // pactada, sin cobrar
+      promo({ id: 'c', paidDate: '2026-07-02', paidAmount: 50000 })    // otro mes
+    ]
+    expect(promoKpis(promos, 2026, 5).prepaidCashInPeriod).toBe(90000)
   })
-  test('mes del pago (cash > 0) -> no struck', () => {
-    const r = promoCashRow({ promoTotal: 3, paymentStatus: 'paid', cashCollected: 45000, paidAmount: 12000 })
-    expect(r.struck).toBe(false)
-  })
-  test('sin promo -> no struck', () => {
-    const r = promoCashRow({ promoTotal: null, paymentStatus: 'paid', cashCollected: 0, paidAmount: 0 })
-    expect(r.struck).toBe(false)
+
+  test('lista vacía no rompe', () => {
+    expect(promoKpis([], 2026, 5)).toEqual({
+      activeCount: 0, prepaidCashInPeriod: 0, totalDiscountGranted: 0, expiringCount: 0
+    })
   })
 })
