@@ -191,8 +191,10 @@ default es **siempre** "cobrable + recupero", sin importar el mes.
   invoiceNumber: string | null,
   invoiceUrl: string | null,
   
-  // Estado de pago (independiente de facturación)
-  paymentStatus: 'pending' | 'paid' | 'overdue',
+  // Estado de pago (independiente de facturación). 'overdue' NO existe: se
+  // eliminó en la migración 009 y el vencimiento se deriva de la fecha.
+  paymentStatus: 'pending' | 'paid' | 'prepaid',
+  promoId: string | null,     // Promo prepaga dueña del mes (ver Promociones)
   paymentDueDate: string,     // Vencimiento: día 10 del mes
   paidAt: string | null,
   paidAmount: number | null,
@@ -260,6 +262,45 @@ default es **siempre** "cobrable + recupero", sin importar el mes.
 4. **Estados independientes**:
    - `invoiceStatus`: Si se generó la factura electrónica
    - `paymentStatus`: Si se recibió el pago
+
+| `paymentStatus` | Significa | `paidAmount` | `paidDate` |
+|---|---|---|---|
+| `pending` | Debe plata | `null` | `null` |
+| `paid` | Entró plata | Lo que entró | Fecha real del pago |
+| `prepaid` | Cubierto por el pago de OTRO mes | `0` | `null` |
+
+`prepaid` sólo lo escribe `collect_promo`: ningún flujo manual lo produce.
+
+### Promociones prepagas (migraciones 086-090)
+
+Pactar una promo y cobrarla son dos actos distintos. **Crear una promo no cobra
+nada**: etiqueta N meses consecutivos (N ≥ 2) con su `promo_id` y su
+`discount_percent`, los deja `pending`, y fija que el **mes ancla** (el primero
+del rango) debe el total del paquete (`promotions.total_amount`) mientras los
+meses 2..N deben `$0`. Cobrar el ancla resuelve el rango entero: ancla → `paid`
+con la plata real, meses 2..N → `prepaid` en `$0`.
+
+La promo es **dueña de su rango**: crear otra que pise esos meses se rechaza con
+error. Cuatro RPC `SECURITY DEFINER` con guarda `is_superadmin()` son la única
+forma de tocarla:
+
+| RPC | Qué hace |
+|---|---|
+| `create_prepaid_promo` | Pacta. Rechaza solape, cliente de baja/no facturable y total $0 |
+| `collect_promo` | Cobra el rango entero de una |
+| `uncollect_promo` | Deshace el cobro; la promo sigue viva y dueña del rango |
+| `cancel_promo` | Deshace cobro + descuento + etiqueta y borra la promo |
+
+El total del paquete es **cobranza, no facturación**: `calculate_month_billing`
+no lo conoce y la e-factura de cada mes sigue siendo el servicio de ese mes.
+
+Contabilidad: el "cobrado" de `get_dashboard_finance_series` es **caja** — cada
+mes aporta al mes en que entró la plata (para un `prepaid`, el `paid_date` del
+ancla de su promo). El "previsto" no cambia: cada mes vale su propio devengado.
+
+Lógica pura + tests en `src/services/promotions/promotionsView.js`:
+`promoState` (un solo estado por promo), `promoMonthIndex`,
+`promoMonthCollection` (monto a cobrar + nominal tachado), `promoKpis`.
 
 ### Flujo de Facturación
 
