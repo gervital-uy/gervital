@@ -43,16 +43,13 @@ export default function PrepaidPromoModal({ isOpen, onClose, client, invoices, o
   const [head, setHead] = useState(null)
   const [percent, setPercent] = useState(15)
   const [totals, setTotals] = useState({}) // ordinal -> { attBase, trans }
-  const [paidDate, setPaidDate] = useState('')
-  const [method, setMethod] = useState('')
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
 
   useEffect(() => {
     if (!isOpen) return
-    setAnchor(null); setHead(null); setPercent(15); setMethod('')
-    setPaidDate(format(new Date(), 'yyyy-MM-dd')); setError(null)
+    setAnchor(null); setHead(null); setPercent(15); setError(null)
     if (eligible.length === 0) return
     setLoading(true)
     Promise.all(eligible.map(m =>
@@ -110,12 +107,11 @@ export default function PrepaidPromoModal({ isOpen, onClose, client, invoices, o
 
   const handleApply = async () => {
     if (!validation.valid) return
-    if (!paidDate) { setError('Ingresá la fecha de pago'); return }
     const s = ymFromOrdinal(range.start)
     const e = ymFromOrdinal(range.end)
     setSubmitting(true); setError(null)
     try {
-      await createPrepaidPromo(client.id, s.year, s.month, e.year, e.month, pct, paidDate, method || null, null)
+      await createPrepaidPromo(client.id, s.year, s.month, e.year, e.month, pct)
       await onRefresh()
       onClose()
     } catch (err) {
@@ -216,27 +212,6 @@ export default function PrepaidPromoModal({ isOpen, onClose, client, invoices, o
             </div>
           )}
 
-          {/* Step 3 — payment */}
-          {summary && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Fecha de pago</label>
-                <input
-                  type="date" value={paidDate} onChange={e => setPaidDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Método (opcional)</label>
-                <input
-                  type="text" value={method} onChange={e => setMethod(e.target.value)}
-                  placeholder="Transferencia, efectivo…"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
-                />
-              </div>
-            </div>
-          )}
-
           {/* Summary */}
           {summary && (
             <div className="rounded-xl border border-violet-200 bg-violet-50/60 p-4">
@@ -257,9 +232,12 @@ export default function PrepaidPromoModal({ isOpen, onClose, client, invoices, o
                 ))}
               </div>
               <div className="mt-3 pt-3 border-t border-violet-200 flex items-center justify-between text-sm">
-                <span className="text-gray-500">Total a prepagar</span>
+                <span className="text-gray-500">Total del paquete</span>
                 <span className="font-bold text-violet-900">{formatCurrency(summary.prepaidTotal)}</span>
               </div>
+              <p className="mt-2 text-xs text-violet-700">
+                La promo se registra sin cobrar: el total queda a cobrar en {summary.rows[0]?.label}.
+              </p>
             </div>
           )}
 
@@ -269,10 +247,10 @@ export default function PrepaidPromoModal({ isOpen, onClose, client, invoices, o
 
           <div className="flex justify-end gap-2 pt-1 border-t border-gray-100">
             <Button variant="secondary" onClick={onClose} disabled={submitting}>Cancelar</Button>
-            <Button onClick={handleApply} loading={submitting} disabled={!validation.valid || !paidDate}>
+            <Button onClick={handleApply} loading={submitting} disabled={!validation.valid}>
               {!validation.valid
                 ? 'Crear promo'
-                : `Cobrar ${formatCurrency(summary?.prepaidTotal || 0)} · ${rangeCount} meses`}
+                : `Crear promo · ${rangeCount} meses · ${formatCurrency(summary?.prepaidTotal || 0)}`}
             </Button>
           </div>
         </div>

@@ -1,3 +1,5 @@
+import { formatCedula } from '../../utils/format'
+
 // Opciones canónicas de la ficha médica. value = valor DB, label = texto UI.
 export const MARITAL_STATUS_OPTIONS = [
   { value: 'soltero', label: 'Soltero/a' },
@@ -20,6 +22,12 @@ export const DOCUMENT_TYPE_OPTIONS = [
 /** Rótulo corto del tipo de documento; 'ci' es el default de la DB. */
 export function documentTypeLabel(type) {
   return DOCUMENT_TYPE_OPTIONS.find(o => o.value === (type || 'ci'))?.shortLabel || 'Documento'
+}
+
+/** Número de documento para mostrar: la cédula lleva puntos y guion, el resto va tal cual. */
+export function formatDocumentNumber(number, type) {
+  if (!number) return ''
+  return (type || 'ci') === 'ci' ? formatCedula(number) : String(number)
 }
 
 export const RESIDENCE_TYPE_OPTIONS = [

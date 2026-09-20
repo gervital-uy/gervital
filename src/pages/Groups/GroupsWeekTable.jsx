@@ -19,6 +19,36 @@ const SHIFT_ROWS = [
   { key: 'afternoon', label: 'Tarde' }
 ]
 
+// Cantidad por tier cognitivo, en orden A→D y solo los tiers presentes.
+function tierCounts(list) {
+  const counts = {}
+  list.forEach(c => {
+    if (c.cognitiveLevel) counts[c.cognitiveLevel] = (counts[c.cognitiveLevel] || 0) + 1
+  })
+  return Object.keys(TIER_ORDER)
+    .filter(tier => counts[tier])
+    .map(tier => ({ tier, count: counts[tier] }))
+}
+
+function TierTags({ list }) {
+  const tiers = tierCounts(list)
+  if (tiers.length === 0) return null
+  return (
+    <span className="gwk-tiers">
+      {tiers.map(({ tier, count }) => (
+        <span
+          key={tier}
+          className="gwk-tier"
+          style={{ background: `${TIER_HEX[tier]}2e` }}
+          title={`Tier ${tier}: ${count} ${count === 1 ? 'persona' : 'personas'}`}
+        >
+          <span className="gwk-tier-letter">{tier}</span>{count}
+        </span>
+      ))}
+    </span>
+  )
+}
+
 const sortRoster = (a, b) =>
   (TIER_ORDER[a.cognitiveLevel] ?? 9) - (TIER_ORDER[b.cognitiveLevel] ?? 9) ||
   `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`)
@@ -39,6 +69,7 @@ function Cell({ present }) {
     <>
       <div className="gwk-cell-head">
         <span className="gwk-count">{present.length} pers.</span>
+        <TierTags list={present} />
       </div>
       {present.map(c => (
         <div key={c.id} className="gwk-chip">
@@ -80,14 +111,16 @@ export default function GroupsWeekTable({ isOpen, onClose, clients }) {
   const dayStats = {}
   WEEK_DAYS.forEach(d => {
     const ids = new Set()
+    const unique = []
     let transport = 0
     SHIFT_ROWS.forEach(s => plannedForDayShift(visibleClients, d.key, s.key).forEach(c => {
       if (!ids.has(c.id)) {
         ids.add(c.id)
+        unique.push(c)
         if (c.plan?.hasTransport) transport += 1
       }
     }))
-    dayStats[d.key] = { total: ids.size, transport }
+    dayStats[d.key] = { total: ids.size, transport, clients: unique }
   })
 
   return (
@@ -139,6 +172,7 @@ export default function GroupsWeekTable({ isOpen, onClose, clients }) {
                     <div className="gwk-day-name">{d.label}</div>
                     <div className="gwk-day-sub">
                       <span>{dayStats[d.key].total} asistentes</span>
+                      <TierTags list={dayStats[d.key].clients} />
                       {dayStats[d.key].transport > 0 && (
                         <span className="gwk-day-transport">
                           <Truck /> {dayStats[d.key].transport}

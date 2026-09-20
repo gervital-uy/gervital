@@ -7,7 +7,7 @@ import { parseDateOnly } from '../../utils/date'
 import Card from '../../components/ui/Card'
 import SemiCircleGauge from './SemiCircleGauge'
 import { formatCurrency, formatCompact } from '../../utils/format'
-import { promoCashRow } from '../../services/promotions/promotionsView'
+import { promoMonthCollection } from '../../services/promotions/promotionsView'
 import { billableTotal } from '../../services/invoices/invoiceAmounts'
 
 const DOMAINS = [
@@ -59,11 +59,13 @@ export default function CollectionPanel({ rows, loading, kpis, onBulkAction, can
     }
     if (tab === 'cobrados') {
       return (rows || [])
-        .filter(r => r.paymentStatus === 'paid')
+        .filter(r => r.paymentStatus === 'paid' || r.paymentStatus === 'prepaid')
         .sort((a, b) => String(b.paidDate || '').localeCompare(String(a.paidDate || '')))
     }
     const filtered = (rows || []).filter(r =>
-      tab === 'pagos' ? r.paymentStatus !== 'paid' : r.invoiceStatus !== 'invoiced'
+      tab === 'pagos'
+        ? (r.paymentStatus !== 'paid' && r.paymentStatus !== 'prepaid')
+        : r.invoiceStatus !== 'invoiced'
     )
     return filtered.sort((a, b) => b.amount - a.amount)
   }, [rows, tab])
@@ -73,7 +75,7 @@ export default function CollectionPanel({ rows, loading, kpis, onBulkAction, can
     : tab === 'cobrados' ? r.cashCollected
     // Facturar = lo cobrado si el mes ya se cobró (aunque haya diferido del cálculo).
     : tab === 'facturas' ? billableTotal({ paymentStatus: r.paymentStatus, paidAmount: r.paidAmount, liveAmount: r.amount })
-    : r.amount
+    : promoMonthCollection({ promoIndex: r.promoIndex, promoTotalAmount: r.promoTotalAmount, monthAmount: r.amount }).due
   const totalPending = list.reduce((s, r) => s + rowAmount(r), 0)
 
   // La difuminación inferior se apaga cuando el scroll llega al final (o no hay overflow),
@@ -197,11 +199,11 @@ export default function CollectionPanel({ rows, loading, kpis, onBulkAction, can
                 </p>
               </div>
               {(() => {
-                const promo = promoCashRow(r)
-                if (tab === 'cobrados' && promo.struck) {
+                // Un mes prepago no aporta caja: su plata entró con el mes ancla.
+                if (tab === 'cobrados' && r.paymentStatus === 'prepaid') {
                   return (
                     <span className="flex items-center gap-1.5 tabular-nums flex-shrink-0">
-                      <span className="text-xs text-gray-400 line-through opacity-60">{formatCurrency(promo.notional)}</span>
+                      <span className="text-xs text-gray-400 line-through opacity-60">{formatCurrency(r.amount)}</span>
                       <span className="text-sm font-semibold text-gray-900">{formatCurrency(0)}</span>
                     </span>
                   )

@@ -5,7 +5,8 @@ import { parseDateOnly } from '../../utils/date'
 import { Plus, Edit, Trash } from 'iconoir-react'
 import Button from '../../components/ui/Button'
 import { deleteFollowup } from '../../services/api'
-import FollowupModal, { motivationConfig, typeLabel, FOLLOWUP_TYPES } from './FollowupModal'
+import FollowupModal, { typeLabel, FOLLOWUP_TYPES } from './FollowupModal'
+import { motivationConfig } from '../../services/clients/motivation'
 
 function fmtDate(d) {
   return d ? format(parseDateOnly(d), 'd MMM yyyy', { locale: es }) : '—'

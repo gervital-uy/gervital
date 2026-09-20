@@ -8,6 +8,7 @@ import { lastBusinessDayOfMonth } from '../../utils/date'
 import { buildTransportConcepto } from '../../services/transport/transportConstants'
 import { emitInvoice, checkDgiStatus, voidInvoice, getInvoicePdf, calculateMonthBilling } from '../../services/api'
 import { prorateInvoiceLines } from '../../services/invoices/invoiceAmounts'
+import { formatDocumentNumber } from '../../services/clients/medicalConstants'
 
 const SCHEDULE_LABEL = { morning: 'Mañana', afternoon: 'Tarde', full_day: 'Día completo' }
 const DOC_TYPE_LABEL = { ci: 'CI', rut: 'RUT', dni: 'DNI', pasaporte: 'Pasaporte', otro: 'Doc' }
@@ -149,7 +150,7 @@ export default function EmitInvoiceModal({
 
   const fullName = `${client.firstName || ''} ${client.lastName || ''}`.trim()
   const docLabel = client.documentNumber
-    ? `${DOC_TYPE_LABEL[client.documentType] ?? 'Doc'} ${client.documentNumber}`
+    ? `${DOC_TYPE_LABEL[client.documentType] ?? 'Doc'} ${formatDocumentNumber(client.documentNumber, client.documentType)}`
     : 'Sin documento'
 
   return (

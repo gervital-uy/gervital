@@ -4,7 +4,7 @@ import { Plus, Search, User, Heart, Flash, Calculator } from 'iconoir-react'
 import { differenceInYears, format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { parseDateOnly } from '../../utils/date'
-import { getClients, deactivateClient, applyDueReactivations } from '../../services/api'
+import { getClients, deactivateClient, applyDueReactivations, getLatestMotivations } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import { useReasonLabels } from '../../hooks/useReasonLabels'
 import Button from '../../components/ui/Button'
@@ -12,6 +12,7 @@ import Card from '../../components/ui/Card'
 import Filters, { getActiveFiltersCount } from '../../components/ui/Filters'
 import SortMenu from '../../components/ui/SortMenu'
 import { CLIENT_TYPE_META } from '../../services/clients/clientTypes'
+import { motivationConfig } from '../../services/clients/motivation'
 import DeactivateClientModal from './DeactivateClientModal'
 import PlanCalculatorModal from './PlanCalculatorModal'
 import './ClientCard.css'
@@ -222,6 +223,7 @@ function ListIcon({ size = 18 }) {
 export default function ClientList() {
   const { user, hasAccess } = useAuth()
   const [clients, setClients] = useState([])
+  const [motivations, setMotivations] = useState({})
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [calculatorOpen, setCalculatorOpen] = useState(false)
@@ -252,8 +254,13 @@ export default function ClientList() {
     try {
       // Self-heal: voltea a activo los reintegros programados cuya fecha ya llegó (no hay cron).
       await applyDueReactivations().catch(() => {})
-      const data = await getClients({ includeDeleted: filters.showDeleted === true })
+      const [data, motivationMap] = await Promise.all([
+        getClients({ includeDeleted: filters.showDeleted === true }),
+        // La motivación es informativa: si falla, la lista se muestra igual
+        getLatestMotivations().catch(() => ({}))
+      ])
       setClients(data)
+      setMotivations(motivationMap)
     } catch (error) {
       console.error('Error cargando clientes:', error)
     } finally {
@@ -398,13 +405,13 @@ export default function ClientList() {
       ) : viewMode === 'grid' ? (
         <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(290px,1fr))]">
           {filteredClients.map((client) => (
-            <ClientCard key={client.id} client={client} />
+            <ClientCard key={client.id} client={client} motivation={motivations[client.id]} />
           ))}
         </div>
       ) : (
         <div className="client-list">
           {filteredClients.map((client) => (
-            <ClientRow key={client.id} client={client} />
+            <ClientRow key={client.id} client={client} motivation={motivations[client.id]} />
           ))}
         </div>
       )}
@@ -425,7 +432,7 @@ export default function ClientList() {
   )
 }
 
-const ClientCard = memo(function ClientCard({ client }) {
+const ClientCard = memo(function ClientCard({ client, motivation }) {
   const reasonLabels = useReasonLabels()
   const age = calculateAge(client.birthDate)
   const isDeactivated = !!client.deletedAt
@@ -434,6 +441,7 @@ const ClientCard = memo(function ClientCard({ client }) {
     : null
   const flags = medicalFlagsFor(client)
   const schedule = SCHEDULE_CONFIG[client.plan.schedule]
+  const mot = motivationConfig(motivation)
 
   return (
     <Link to={`/clientes/${client.id}`} className={`client-card${isDeactivated ? ' is-deactivated' : ''}`}>
@@ -453,6 +461,9 @@ const ClientCard = memo(function ClientCard({ client }) {
         style={{ background: `linear-gradient(135deg, ${TIER_HEX[client.cognitiveLevel] || '#94a3b8'}4d, #ffffff 78%)` }}
       >
         <span className="cc-tier-letter">{client.cognitiveLevel}</span>
+        {mot && (
+          <span className="cc-mot" style={{ background: mot.hex }} title={`Motivación ${mot.label.toLowerCase()}`} />
+        )}
       </div>
 
       {/* Tab flags médicos (esquina superior derecha) */}
@@ -524,7 +535,7 @@ const ClientCard = memo(function ClientCard({ client }) {
   )
 })
 
-const ClientRow = memo(function ClientRow({ client }) {
+const ClientRow = memo(function ClientRow({ client, motivation }) {
   const reasonLabels = useReasonLabels()
   const age = calculateAge(client.birthDate)
   const isDeactivated = !!client.deletedAt
@@ -533,6 +544,7 @@ const ClientRow = memo(function ClientRow({ client }) {
     : null
   const flags = medicalFlagsFor(client)
   const schedule = SCHEDULE_CONFIG[client.plan.schedule]
+  const mot = motivationConfig(motivation)
 
   return (
     <Link to={`/clientes/${client.id}`} className={`client-row${isDeactivated ? ' is-deactivated' : ''}`}>
@@ -552,6 +564,11 @@ const ClientRow = memo(function ClientRow({ client }) {
         >
           {client.cognitiveLevel}
         </span>
+      )}
+
+      {/* Motivación (informe de seguimiento más reciente) */}
+      {mot && (
+        <span className="cr-mot" style={{ background: mot.hex }} title={`Motivación ${mot.label.toLowerCase()}`} />
       )}
 
       {/* Nombre + edad */}

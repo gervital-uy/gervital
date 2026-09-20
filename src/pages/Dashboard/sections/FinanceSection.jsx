@@ -144,7 +144,7 @@ export default function FinanceSection({ selected, onSelectMonth }) {
 
   const openBulk = (mode) => {
     const candidates = panelRows.filter(r =>
-      mode === 'pay' ? r.paymentStatus !== 'paid' : r.invoiceStatus !== 'invoiced'
+      mode === 'pay' ? (r.paymentStatus !== 'paid' && r.paymentStatus !== 'prepaid') : r.invoiceStatus !== 'invoiced'
     )
     const rows = candidates.map(r => {
       // Al facturar, el monto es el cobrado si el mes ya se cobró (regla: facturar = lo cobrado).

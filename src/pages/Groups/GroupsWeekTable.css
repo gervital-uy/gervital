@@ -105,9 +105,18 @@
 }
 .gwk-day-name { font-size: 14px; font-weight: 700; }
 .gwk-day-sub {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px;
   font-size: 12px; color: #9ca3af; font-weight: 500; margin-top: 2px;
 }
+/* Tags de cantidad por tier: [A 3][B 2]... el fondo tintado viene inline */
+.gwk-tiers { display: inline-flex; align-items: center; gap: 3px; }
+.gwk-tier {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 6px; border-radius: 6px;
+  font-size: 11px; font-weight: 700; color: #475569; line-height: 1.5;
+}
+.gwk-tier-letter { color: #1f2937; }
+
 .gwk-day-transport {
   display: inline-flex; align-items: center; gap: 3px;
   color: #4f46e5; font-weight: 700;
@@ -137,7 +146,7 @@
 .gwk-table tr.gwk-band th.gwk-shift { background: #fcfcfd; }
 
 .gwk-cell-head {
-  display: flex; align-items: center;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
   margin: 0 2px 6px;
 }
 .gwk-count { font-size: 12px; color: #9ca3af; font-weight: 600; }

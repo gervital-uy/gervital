@@ -49,6 +49,23 @@ export async function getClientFollowups(clientId) {
   return data.map(fromDb)
 }
 
+// Motivación vigente de todos los clientes: la del informe más reciente que la
+// tenga cargada. Devuelve un mapa clientId → 'alta' | 'media' | 'baja'.
+export async function getLatestMotivations() {
+  const { data, error } = await supabase
+    .from('client_followup_reports')
+    .select('client_id, motivation, report_date, created_at')
+    .not('motivation', 'is', null)
+    .order('report_date', { ascending: false })
+    .order('created_at', { ascending: false })
+  if (error) throw new Error(error.message)
+  const byClient = {}
+  for (const row of data) {
+    if (!byClient[row.client_id]) byClient[row.client_id] = row.motivation
+  }
+  return byClient
+}
+
 export async function createFollowup(clientId, payload) {
   const { data, error } = await supabase
     .from('client_followup_reports')

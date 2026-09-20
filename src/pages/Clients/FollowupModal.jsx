@@ -5,6 +5,7 @@ import Button from '../../components/ui/Button'
 import Input, { Select, Textarea } from '../../components/ui/Input'
 import { createFollowup, updateFollowup } from '../../services/api'
 import { todayStr } from '../../utils/date'
+import { MOTIVATIONS } from '../../services/clients/motivation'
 
 export const FOLLOWUP_TYPES = [
   { value: 'seguimiento', label: 'Seguimiento' },
@@ -12,15 +13,6 @@ export const FOLLOWUP_TYPES = [
   { value: 'familiares', label: 'Reporte a familiares' }
 ]
 
-// Motivación del cliente. Colores alineados a la paleta de la app (alta=verde,
-// media=ámbar, baja=rojo), igual criterio que los niveles cognitivos.
-export const MOTIVATIONS = [
-  { value: 'alta', label: 'Alta', dot: 'bg-emerald-500', active: 'border-emerald-500 bg-emerald-500 text-white', chip: 'bg-emerald-50 text-emerald-700', border: 'border-l-emerald-500' },
-  { value: 'media', label: 'Media', dot: 'bg-amber-500', active: 'border-amber-500 bg-amber-500 text-white', chip: 'bg-amber-50 text-amber-700', border: 'border-l-amber-500' },
-  { value: 'baja', label: 'Baja', dot: 'bg-red-500', active: 'border-red-500 bg-red-500 text-white', chip: 'bg-red-50 text-red-700', border: 'border-l-red-500' }
-]
-
-export const motivationConfig = (v) => MOTIVATIONS.find(m => m.value === v)
 export const typeLabel = (v) => FOLLOWUP_TYPES.find(t => t.value === v)?.label || v
 
 const truncate = (s, n = 60) => (!s ? '' : s.length > n ? s.slice(0, n - 1) + '…' : s)

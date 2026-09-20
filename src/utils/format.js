@@ -21,3 +21,15 @@ export function formatCompact(amount) {
   }
   return String(Math.round(n))
 }
+
+// Cédula uruguaya para display: el último dígito es el verificador y va precedido
+// por un guion, los miles del resto se separan con punto (12345678 → 1.234.567-8).
+// La cédula se guarda siempre sin puntos ni guion, así que esto es solo lectura.
+export function formatCedula(value) {
+  const raw = String(value ?? '').trim()
+  const digits = raw.replace(/\D/g, '')
+  if (digits.length < 2) return raw
+  const body = digits.slice(0, -1)
+  const checkDigit = digits.slice(-1)
+  return `${body.replace(/\B(?=(\d{3})+(?!\d))/g, '.')}-${checkDigit}`
+}

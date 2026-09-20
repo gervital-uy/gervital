@@ -335,6 +335,26 @@ export default function AddClient() {
       : { ...prev, emergencyContacts: prev.emergencyContacts.filter((_, i) => i !== index) })
   }
 
+  // La cédula se guarda sin formato: los puntos y el guion son solo de display
+  const documentNumberError = (data) => {
+    if (!data.documentNumber.trim()) return 'Requerido'
+    if (data.documentType === 'ci' && !/^\d+$/.test(data.documentNumber.trim())) {
+      return 'Ingresá la cédula sin puntos ni guion (ej: 12345678)'
+    }
+    return null
+  }
+
+  // Feedback inmediato al tipear: el formato inválido no espera al submit. Mientras el
+  // campo está vacío no se muestra 'Requerido' (eso lo decide la validación del paso).
+  const updateDocumentField = (field, value) => {
+    const next = { ...formData, [field]: value }
+    setFormData(prev => ({ ...prev, [field]: value }))
+    setErrors(prev => ({
+      ...prev,
+      documentNumber: next.documentNumber.trim() ? documentNumberError(next) : null
+    }))
+  }
+
   const validateStep = (step) => {
     const newErrors = {}
     
@@ -344,7 +364,8 @@ export default function AddClient() {
       if (!formData.email.trim()) newErrors.email = 'Requerido'
       if (!formData.phone.trim()) newErrors.phone = 'Requerido'
       if (!formData.birthDate) newErrors.birthDate = 'Requerido'
-      if (!formData.documentNumber.trim()) newErrors.documentNumber = 'Requerido'
+      const docError = documentNumberError(formData)
+      if (docError) newErrors.documentNumber = docError
       formData.emergencyContacts.forEach((c, i) => {
         if (!c.name.trim()) newErrors[`ec_${i}_name`] = 'Requerido'
         if (!c.phone.trim()) newErrors[`ec_${i}_phone`] = 'Requerido'
@@ -384,6 +405,14 @@ export default function AddClient() {
 
   const handleSubmit = async () => {
     if (!validateStep(LAST_STEP)) return
+
+    // El documento vive en el paso 1 y en edición se llega al último paso sin pasar por ahí
+    const docError = documentNumberError(formData)
+    if (docError) {
+      setErrors(prev => ({ ...prev, documentNumber: docError }))
+      setCurrentStep(1)
+      return
+    }
     
     setLoading(true)
     try {
@@ -396,7 +425,7 @@ export default function AddClient() {
         cognitiveLevel: formData.cognitiveLevel,
         startDate: formData.startDate,
         documentType: formData.documentType,
-        documentNumber: formData.documentNumber,
+        documentNumber: formData.documentNumber.trim(),
         transferResponsible: formData.transferResponsible,
         clientType: formData.clientType,
         plan: {
@@ -745,15 +774,15 @@ export default function AddClient() {
                   <Select
                     label="Tipo de documento"
                     value={formData.documentType}
-                    onChange={(e) => updateField('documentType', e.target.value)}
+                    onChange={(e) => updateDocumentField('documentType', e.target.value)}
                     options={DOCUMENT_TYPE_OPTIONS}
                   />
                   <Input
                     label="Número de documento"
                     value={formData.documentNumber}
-                    onChange={(e) => updateField('documentNumber', e.target.value)}
+                    onChange={(e) => updateDocumentField('documentNumber', e.target.value)}
                     error={errors.documentNumber}
-                    placeholder="1.234.567-8"
+                    placeholder={formData.documentType === 'ci' ? '12345678 (sin puntos ni guion)' : 'Número de documento'}
                   />
                   <Input
                     label="Responsable de transferencia"
