@@ -6,7 +6,7 @@ import { todayStr } from '../../utils/date'
 import Input from '../../components/ui/Input'
 import { formatCurrency } from '../../utils/format'
 import { lastBusinessDayOfMonth } from '../../utils/date'
-import { emitInvoice, markMonthPaid } from '../../services/api'
+import { emitInvoice, markMonthPaid, collectPromo } from '../../services/api'
 
 const RATE_LIMIT_MS = 1100 // delay entre llamadas (rate-limit de Biller)
 
@@ -15,6 +15,7 @@ const RATE_LIMIT_MS = 1100 // delay entre llamadas (rate-limit de Biller)
 function eligibilityBadge(eligibility) {
   if (eligibility === 'sin CI') return { label: 'sin CI', cls: 'bg-red-50 text-red-700' }
   if (eligibility === 'monto 0') return { label: 'monto 0', cls: 'bg-gray-100 text-gray-500' }
+  if (eligibility === 'en promo') return { label: 'cubierto por promo', cls: 'bg-violet-50 text-violet-700' }
   return { label: 'listo', cls: 'bg-green-50 text-green-700' }
 }
 
@@ -70,7 +71,11 @@ export default function BulkInvoiceModal({
       const target = items.find(it => it.id === id)
       setItem(id, { runStatus: 'running' })
       try {
-        if (isPay) {
+        if (isPay && target.promoId) {
+          // Mes ancla de una promo prepaga: cobra el paquete entero y deja los
+          // meses 2..N como prepaid (collect_promo exige fecha de pago).
+          await collectPromo(target.promoId, target.paidDate || todayStr(), target.amount)
+        } else if (isPay) {
           await markMonthPaid(id, year, month, target.amount, null, null, target.paidDate || null)
         } else {
           await emitInvoice(id, year, month, {

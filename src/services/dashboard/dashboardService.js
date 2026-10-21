@@ -192,7 +192,7 @@ export async function getDashboardFinanceSeries(fromYear, fromMonth, toYear, toM
  * monthly_invoices snapshot (default 'pending' when no row exists yet).
  * @param {number} year
  * @param {number} month - 0-indexed
- * @returns {Promise<Array>} rows: { id, firstName, lastName, avatarUrl, documentNumber, transferResponsible, isDeactivated, amount, paidAmount, paymentStatus, invoiceStatus, promoIndex, promoTotal, promoPercent, promoTotalAmount }
+ * @returns {Promise<Array>} rows: { id, firstName, lastName, avatarUrl, documentNumber, transferResponsible, isDeactivated, amount, paidAmount, paymentStatus, invoiceStatus, promoId, promoIndex, promoTotal, promoPercent, promoTotalAmount }
  */
 export async function getMonthInvoicePanel(year, month) {
   const [panelRes, clientsRes] = await Promise.all([
@@ -226,6 +226,7 @@ export async function getMonthInvoicePanel(year, month) {
       invoiceDate: row.invoice_date || null,
       invoicedAmount: Number(row.invoiced_amount || 0),
       cashCollected: Number(row.cash_collected || 0),
+      promoId: row.promo_id || null,
       promoIndex: row.promo_index != null ? Number(row.promo_index) : null,
       promoTotal: row.promo_total != null ? Number(row.promo_total) : null,
       promoPercent: row.promo_percent != null ? Number(row.promo_percent) : null,

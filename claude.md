@@ -271,7 +271,7 @@ default es **siempre** "cobrable + recupero", sin importar el mes.
 
 `prepaid` sólo lo escribe `collect_promo`: ningún flujo manual lo produce.
 
-### Promociones prepagas (migraciones 086-090)
+### Promociones prepagas (migraciones 086-092)
 
 Pactar una promo y cobrarla son dos actos distintos. **Crear una promo no cobra
 nada**: etiqueta N meses consecutivos (N ≥ 1, mig 091) con su `promo_id` y su
@@ -290,6 +290,13 @@ forma de tocarla:
 | `collect_promo` | Cobra el rango entero de una |
 | `uncollect_promo` | Deshace el cobro; la promo sigue viva y dueña del rango |
 | `cancel_promo` | Deshace cobro + descuento + etiqueta y borra la promo |
+
+Una promo se cobra **entera desde su mes ancla, nunca mes por mes** (mig 092):
+`mark_month_paid` rechaza cualquier mes con `promo_id`. Por dentro, `collect_promo`
+usa `mark_month_paid_core` (mismo cuerpo, sin la guarda y sin EXECUTE para
+clientes). Todo flujo de cobro del front que pueda tocar un mes ancla tiene que ir
+por `collectPromo`: la ficha del cliente y el cobro masivo del dashboard
+(`buildBulkRows` en `src/services/dashboard/bulkRows.js`) ya lo hacen.
 
 El total del paquete es **cobranza, no facturación**: `calculate_month_billing`
 no lo conoce y la e-factura de cada mes sigue siendo el servicio de ese mes.
