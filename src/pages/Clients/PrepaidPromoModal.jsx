@@ -123,13 +123,13 @@ export default function PrepaidPromoModal({ isOpen, onClose, client, invoices, o
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Nueva promo prepaga" size="lg">
-      {eligible.length < 2 ? (
+      {eligible.length === 0 ? (
         <div className="py-10 text-center">
           <div className="mx-auto mb-3 w-11 h-11 rounded-full bg-violet-50 flex items-center justify-center">
             <Percentage className="w-5 h-5 text-violet-500" />
           </div>
           <p className="text-sm text-gray-500">
-            Se necesitan al menos 2 meses sin cobrar ni facturar para armar una promo.
+            No hay meses sin cobrar ni facturar para armar una promo.
           </p>
           <div className="mt-5 flex justify-center">
             <Button variant="secondary" onClick={onClose}>Cerrar</Button>
@@ -217,7 +217,7 @@ export default function PrepaidPromoModal({ isOpen, onClose, client, invoices, o
             <div className="rounded-xl border border-violet-200 bg-violet-50/60 p-4">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-sm font-medium text-violet-900">
-                  {rangeCount} meses · {pct}% dto
+                  {rangeCount} {rangeCount === 1 ? 'mes' : 'meses'} · {pct}% dto
                 </span>
                 <span className="text-sm font-semibold text-violet-700">
                   Ahorro {formatCurrency(summary.savings)}
@@ -250,7 +250,7 @@ export default function PrepaidPromoModal({ isOpen, onClose, client, invoices, o
             <Button onClick={handleApply} loading={submitting} disabled={!validation.valid}>
               {!validation.valid
                 ? 'Crear promo'
-                : `Crear promo · ${rangeCount} meses · ${formatCurrency(summary?.prepaidTotal || 0)}`}
+                : `Crear promo · ${rangeCount} ${rangeCount === 1 ? 'mes' : 'meses'} · ${formatCurrency(summary?.prepaidTotal || 0)}`}
             </Button>
           </div>
         </div>

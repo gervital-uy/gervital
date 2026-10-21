@@ -34,10 +34,16 @@ describe('validateDiscountRange', () => {
     expect(r.months.map(m => m.month)).toEqual([2, 3, 4])
   })
 
-  test('rejects single-month range', () => {
+  test('accepts a single-month range', () => {
     const r = validateDiscountRange(invoices, { startYear: 2026, startMonth: 2, endYear: 2026, endMonth: 2, percent: 20 })
+    expect(r.valid).toBe(true)
+    expect(r.months.map(m => m.month)).toEqual([2])
+  })
+
+  test('rejects a single month that is not eligible', () => {
+    const withPaid = [inv(2026, 2, { paid: true })]
+    const r = validateDiscountRange(withPaid, { startYear: 2026, startMonth: 2, endYear: 2026, endMonth: 2, percent: 20 })
     expect(r.valid).toBe(false)
-    expect(r.error).toMatch(/2 meses/i)
   })
 
   test('rejects end before start', () => {

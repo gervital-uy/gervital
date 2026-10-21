@@ -1195,13 +1195,17 @@ function MonthCard({ client, year, month, invoice, allInvoices, promotions, atte
   // Cancelar una promo es destructivo: deshace el cobro del paquete COMPLETO,
   // no sólo el de este mes. Por eso la confirmación enumera lo que se pierde.
   const canManagePromo = !!promo && roleHasAccess(user?.role, 'promotions')
-  const promoRangeLabel = promo
-    ? `${format(new Date(promo.startYear, promo.startMonth, 1), 'MMM yyyy', { locale: es })} – ${format(new Date(promo.endYear, promo.endMonth, 1), 'MMM yyyy', { locale: es })}`
-    : ''
+  const promoMonthLabel = (y, m) => format(new Date(y, m, 1), 'MMM yyyy', { locale: es })
+  const promoRangeLabel = !promo
+    ? ''
+    : promoLength === 1
+      ? promoMonthLabel(promo.startYear, promo.startMonth)
+      : `${promoMonthLabel(promo.startYear, promo.startMonth)} – ${promoMonthLabel(promo.endYear, promo.endMonth)}`
   const handleCancelPromo = async () => {
+    const monthsBack = promoLength === 1 ? 'el mes vuelve' : `los ${promoLength} meses vuelven`
     const undo = promo.paidDate
-      ? `Se deshace el cobro de ${formatCurrency(promo.paidAmount ?? promo.totalAmount)} y los ${promoLength} meses vuelven a pendiente sin descuento.`
-      : `Los ${promoLength} meses vuelven a pendiente sin descuento.`
+      ? `Se deshace el cobro de ${formatCurrency(promo.paidAmount ?? promo.totalAmount)} y ${monthsBack} a pendiente sin descuento.`
+      : `Al cancelarla, ${monthsBack} a pendiente sin descuento.`
     if (!window.confirm(`¿Cancelar la promo ${promoRangeLabel}?\n\n${undo}`)) return
     try { await withProcessing(() => cancelPromo(promo.id)) }
     catch (e) { window.alert(e.message) }

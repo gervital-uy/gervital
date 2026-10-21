@@ -7,7 +7,11 @@ import { getPromotions } from '../../../services/promotions/promotionService'
 import { promoState, promoMonthIndex, promoKpis, promoOrdinal } from '../../../services/promotions/promotionsView'
 
 const monthLabel = (year, month) => format(new Date(year, month, 1), 'MMM yyyy', { locale: es })
-const rangeLabel = (p) => `${monthLabel(p.startYear, p.startMonth)} – ${monthLabel(p.endYear, p.endMonth)}`
+const rangeLabel = (p) => {
+  const start = monthLabel(p.startYear, p.startMonth)
+  const end = monthLabel(p.endYear, p.endMonth)
+  return start === end ? start : `${start} – ${end}`
+}
 
 // Sello por fila. Reemplaza a las dos listas que se solapaban: ahora cada promo
 // tiene un estado y aparece exactamente una vez.

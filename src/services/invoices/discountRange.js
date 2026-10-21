@@ -31,9 +31,6 @@ export function validateDiscountRange(invoices, { startYear, startMonth, endYear
   if (endOrd < startOrd) {
     return { valid: false, error: 'El mes de fin debe ser posterior o igual al de inicio' }
   }
-  if (endOrd === startOrd) {
-    return { valid: false, error: 'Seleccioná un rango de al menos 2 meses' }
-  }
 
   const byOrdinal = new Map((invoices || []).map(inv => [ordinalOf(inv.year, inv.month), inv]))
   const months = []

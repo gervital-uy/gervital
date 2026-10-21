@@ -139,13 +139,13 @@ export default function ApplyDiscountModal({ isOpen, onClose, client, invoices, 
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Aplicar descuento" size="lg">
-      {eligible.length < 2 ? (
+      {eligible.length === 0 ? (
         <div className="py-10 text-center">
           <div className="mx-auto mb-3 w-11 h-11 rounded-full bg-violet-50 flex items-center justify-center">
             <Percentage className="w-5 h-5 text-violet-500" />
           </div>
           <p className="text-sm text-gray-500">
-            Se necesitan al menos 2 meses sin cobrar ni facturar para aplicar un descuento.
+            No hay meses sin cobrar ni facturar para aplicar un descuento.
           </p>
           <div className="mt-5 flex justify-center">
             <Button variant="secondary" onClick={onClose}>Cerrar</Button>
@@ -306,7 +306,7 @@ export default function ApplyDiscountModal({ isOpen, onClose, client, invoices, 
                 ? 'Aplicar descuento'
                 : markPaid
                   ? `Aplicar ${pct}% y cobrar ${rangeCount} ${rangeCount === 1 ? 'mes' : 'meses'}`
-                  : `Aplicar ${pct}% a ${rangeCount} meses`}
+                  : `Aplicar ${pct}% a ${rangeCount} ${rangeCount === 1 ? 'mes' : 'meses'}`}
             </Button>
           </div>
         </div>

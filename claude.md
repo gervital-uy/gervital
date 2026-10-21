@@ -274,7 +274,7 @@ default es **siempre** "cobrable + recupero", sin importar el mes.
 ### Promociones prepagas (migraciones 086-090)
 
 Pactar una promo y cobrarla son dos actos distintos. **Crear una promo no cobra
-nada**: etiqueta N meses consecutivos (N ≥ 2) con su `promo_id` y su
+nada**: etiqueta N meses consecutivos (N ≥ 1, mig 091) con su `promo_id` y su
 `discount_percent`, los deja `pending`, y fija que el **mes ancla** (el primero
 del rango) debe el total del paquete (`promotions.total_amount`) mientras los
 meses 2..N deben `$0`. Cobrar el ancla resuelve el rango entero: ancla → `paid`
