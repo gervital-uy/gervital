@@ -1014,6 +1014,10 @@ video {
   max-height: 14rem;
 }
 
+.max-h-60 {
+  max-height: 15rem;
+}
+
 .max-h-80 {
   max-height: 20rem;
 }
@@ -1634,6 +1638,10 @@ video {
   align-self: stretch;
 }
 
+.overflow-auto {
+  overflow: auto;
+}
+
 .overflow-hidden {
   overflow: hidden;
 }
@@ -1674,6 +1682,10 @@ video {
 
 .break-words {
   overflow-wrap: break-word;
+}
+
+.break-all {
+  word-break: break-all;
 }
 
 .rounded {

@@ -1,15 +1,22 @@
 import { supabase } from '../supabase/client'
 
-// Invoke the biller edge function, surfacing the server error message
+// Invoke the biller edge function, surfacing the server error message. The thrown
+// Error carries `detail` (Biller's raw response body, when the edge function got one)
+// and `status` (HTTP status of the edge function) so the UI can show what Biller said.
 async function invokeBiller(body) {
   const { data, error } = await supabase.functions.invoke('biller', { body })
   if (error) {
     let message = error.message
+    let detail = null
     try {
       const ctx = await error.context?.json?.()
       if (ctx?.error) message = ctx.error
+      if (ctx?.detail) detail = ctx.detail
     } catch (_) { /* ignore parse errors */ }
-    throw new Error(message)
+    const err = new Error(message)
+    err.detail = detail
+    err.status = error.context?.status ?? null
+    throw err
   }
   if (data?.error) throw new Error(data.error)
   return data
@@ -34,7 +41,10 @@ export async function getInvoicePdf(clientId, year, month) {
  * @param {boolean} [force] - Re-sync even if already linked (e.g. after editing fiscal data)
  */
 export async function syncClientToBiller(clientId, force = false) {
-  return invokeBiller({ action: 'sync_client', clientId, force })
+  const data = await invokeBiller({ action: 'sync_client', clientId, force })
+  // Biller respondió 2xx pero sin el id del receptor: el cliente no quedó vinculado
+  if (!data?.billerClientId) throw new Error('Biller no devolvió el id del cliente')
+  return data
 }
 
 /** Poll DGI acceptance status for an emitted invoice */

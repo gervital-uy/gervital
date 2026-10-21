@@ -15,6 +15,7 @@ import Button from '../../components/ui/Button'
 import Input, { Select, Textarea, Checkbox } from '../../components/ui/Input'
 import { CLIENT_TYPES, CLIENT_TYPE_META, isNonBillableType } from '../../services/clients/clientTypes'
 import Card, { CardContent } from '../../components/ui/Card'
+import Modal from '../../components/ui/Modal'
 import { useAuth } from '../../context/AuthContext'
 import { RepeatableRows } from './medical/RepeatableRows'
 import { MARITAL_STATUS_OPTIONS, RESIDENCE_TYPE_OPTIONS, CHARACTER_OPTIONS, DIAGNOSIS_TYPE_OPTIONS, MEDICAL_HISTORY_CONDITIONS, DOCUMENT_TYPE_OPTIONS } from '../../services/clients/medicalConstants'
@@ -131,6 +132,15 @@ function getSubmitErrorMessage(error) {
     : 'No se pudo guardar. Revisá los datos e intentá nuevamente.'
 }
 
+// La respuesta cruda de Biller suele ser JSON: indentado se lee mejor en el modal.
+function formatBillerDetail(detail) {
+  try {
+    return JSON.stringify(JSON.parse(detail), null, 2)
+  } catch (_) {
+    return detail
+  }
+}
+
 export default function AddClient() {
   const navigate = useNavigate()
   const { hasAccess, user } = useAuth()
@@ -155,6 +165,11 @@ export default function AddClient() {
   const [planEffectiveFrom, setPlanEffectiveFrom] = useState('')
   const [planFloorMonth, setPlanFloorMonth] = useState('')
   const [toast, setToast] = useState(null)
+  // Sync con Biller fallido después de guardar: { clientId, force, doneTo, message, detail }.
+  // El cliente ya quedó guardado, así que el modal nunca vuelve al formulario
+  // (re-enviarlo duplicaría el alta).
+  const [billerFailure, setBillerFailure] = useState(null)
+  const [retryingBiller, setRetryingBiller] = useState(false)
   const geocoderRef = useRef(null)
   const distanceMatrixRef = useRef(null)
   // Street value the current coords were derived from — lets us re-geocode only when
@@ -403,6 +418,26 @@ export default function AddClient() {
     if (target <= maxStepReached) setCurrentStep(target)
   }
 
+  // Alta/re-sync del receptor en Biller. Devuelve true si quedó sincronizado; si falla,
+  // deja el error en pantalla (modal) y devuelve false para que el caller no navegue.
+  const syncBiller = async ({ clientId, force, doneTo }) => {
+    try {
+      await syncClientToBiller(clientId, force)
+      return true
+    } catch (err) {
+      console.error('Sync Biller falló:', err)
+      setBillerFailure({ clientId, force, doneTo, message: err.message, detail: err.detail })
+      return false
+    }
+  }
+
+  const retryBillerSync = async () => {
+    setRetryingBiller(true)
+    const ok = await syncBiller(billerFailure)
+    setRetryingBiller(false)
+    if (ok) navigate(billerFailure.doneTo)
+  }
+
   const handleSubmit = async () => {
     if (!validateStep(LAST_STEP)) return
 
@@ -492,11 +527,13 @@ export default function AddClient() {
           await voidPendingInvoices(id).catch(err => console.warn('Void facturas falló:', err))
         }
         // Re-sync receptor en Biller: los datos fiscales (nombre/CI/dirección/email) pudieron cambiar.
+        // Es también donde se crea el receptor de un cliente a prueba que pasa a regular.
         // No se sincroniza a clientes no facturables (beneficencia / a prueba).
+        const doneTo = `/clientes/${id}`
         if (formData.documentNumber && !isNonBillableType(formData.clientType)) {
-          syncClientToBiller(id, true).catch(err => console.warn('Re-sync Biller falló:', err))
+          if (!(await syncBiller({ clientId: id, force: true, doneTo }))) return
         }
-        navigate(`/clientes/${id}`)
+        navigate(doneTo)
       } else {
         const newClient = await createClient(clientData)
         if (formData.latitude != null && formData.longitude != null && newClient?.id) {
@@ -526,12 +563,7 @@ export default function AddClient() {
         // Sync receptor en Biller. No bloquea el alta: el cliente ya quedó creado.
         // No se sincroniza a clientes no facturables (beneficencia / a prueba).
         if (newClient?.id && formData.documentNumber && !isNonBillableType(formData.clientType)) {
-          try {
-            await syncClientToBiller(newClient.id)
-          } catch (err) {
-            console.warn('Sync Biller falló:', err)
-            window.alert(`Cliente creado, pero no se pudo sincronizar con Biller: ${err.message}\n\nPodés reintentar desde el detalle del cliente.`)
-          }
+          if (!(await syncBiller({ clientId: newClient.id, force: false, doneTo: '/clientes' }))) return
         }
         navigate('/clientes')
       }
@@ -599,6 +631,37 @@ export default function AddClient() {
           {toast.message}
         </div>
       )}
+      {/* Sync con Biller fallido: cerrar lleva al detalle, donde el chip de Biller permite reintentar */}
+      <Modal
+        isOpen={!!billerFailure}
+        onClose={() => navigate(`/clientes/${billerFailure.clientId}`)}
+        title="No se pudo sincronizar con Biller"
+      >
+        {billerFailure && (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-700">
+              {isEditMode ? 'Los cambios del cliente se guardaron' : 'El cliente se creó'}, pero Biller no dio de alta
+              el receptor. Podés reintentar ahora o más tarde desde el detalle del cliente.
+            </p>
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+              <p className="text-sm font-medium text-red-800">{billerFailure.message}</p>
+              {billerFailure.detail && (
+                <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap break-all text-xs text-red-700">
+                  {formatBillerDetail(billerFailure.detail)}
+                </pre>
+              )}
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => navigate(`/clientes/${billerFailure.clientId}`)}>
+                Ir al cliente
+              </Button>
+              <Button onClick={retryBillerSync} loading={retryingBiller}>
+                Reintentar
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
       {/* Header */}
       <div className="flex items-center gap-4 mb-6">
         <Button variant="ghost" size="sm" onClick={() => navigate(isEditMode ? `/clientes/${id}` : '/clientes')}>
