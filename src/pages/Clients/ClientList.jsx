@@ -46,7 +46,6 @@ const SCHEDULE_CONFIG = {
 const MEDICAL_FLAGS = [
   { condition: 'diabetes', label: 'Diabético', initial: 'D', color: '#3b82f6' },
   { condition: 'celiaquia', label: 'Celíaco', initial: 'C', color: '#f59e0b' },
-  { condition: 'hipertension', label: 'Hipertenso', initial: 'H', color: '#ef4444' },
   { condition: 'intolerancia_lactosa', label: 'Intolerante a la lactosa', initial: 'L', color: '#8b5cf6' }
 ]
 
