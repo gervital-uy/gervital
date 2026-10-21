@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -170,11 +170,16 @@ export default function CarAssignmentPanel({
     setActiveClient(null)
   }
 
+  // Si el panel se desmonta (p. ej. se navegó a otro día) el timeout no puede
+  // aplicar la auto-asignación sobre el día nuevo.
+  const autoAssignTimeoutRef = useRef(null)
+  useEffect(() => () => clearTimeout(autoAssignTimeoutRef.current), [])
+
   function handleAutoAssign() {
     if (autoAssigning) return
     setAutoAssigning(true)
     // Fake compute delay so the assignment feels like real work
-    setTimeout(() => {
+    autoAssignTimeoutRef.current = setTimeout(() => {
       onStateChange(prev => autoAssignByZone(prev, clientsById).state)
       setAutoAssigning(false)
     }, 600)

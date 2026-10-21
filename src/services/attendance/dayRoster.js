@@ -99,29 +99,36 @@ export function isRecoveryAttendee(client, attendanceByClientId) {
 }
 
 /**
- * Return the day's time slots with the given client ids removed from every
- * activity. Grupos uses this to keep absent clients out of the rendered time
- * slots: a client can be assigned to an activity and then be marked absent (or
- * be assigned during the brief window before the date's attendance loads), and
- * the day view must not show them mapped to a horario.
+ * Return the day's time slots keeping, in every activity, only the clients in
+ * `allowedIds` — the day's present roster for the shift. Grupos uses it so an
+ * assignment never outlives presence: whoever stops coming that day leaves the
+ * horario, whatever the reason (falta, recupero anulado, día sacado del plan,
+ * cambio de turno, baja). Es una lista blanca: una lista negra de ausentes no
+ * alcanza, porque un recupero anulado o un cambio de plan no dejan un 'absent'.
  *
- * Non-destructive: the underlying assignment row is left intact, so un-marking
- * the absence brings them back and saving the reference group still snapshots
- * their usual spot. Referentially stable — returns the same array when there is
- * nothing to strip, and reuses untouched activity objects, so it plays well
- * with useMemo and React reconciliation.
+ * Non-destructive: the underlying assignment row is left intact, so undoing the
+ * absence brings the client back to the same activity and saving the reference
+ * group still snapshots their usual spot. Referentially stable — returns the same
+ * array when nothing is removed (or when `allowedIds` is missing because the
+ * roster has not loaded yet), and reuses untouched slots and activities, so it
+ * plays well with useMemo and React reconciliation.
  * @param {Array} timeSlots
- * @param {Set<string>} excludeIds
+ * @param {Set<string>} [allowedIds]
  * @returns {Array}
  */
-export function stripClientsFromSlots(timeSlots, excludeIds) {
-  if (!excludeIds || excludeIds.size === 0) return timeSlots
-  return timeSlots.map(slot => ({
-    ...slot,
-    activities: slot.activities.map(a =>
-      a.clientIds.some(id => excludeIds.has(id))
-        ? { ...a, clientIds: a.clientIds.filter(id => !excludeIds.has(id)) }
-        : a
-    )
-  }))
+export function keepClientsInSlots(timeSlots, allowedIds) {
+  if (!allowedIds) return timeSlots
+  let changed = false
+  const next = timeSlots.map(slot => {
+    let slotChanged = false
+    const activities = slot.activities.map(a => {
+      if (a.clientIds.every(id => allowedIds.has(id))) return a
+      slotChanged = true
+      return { ...a, clientIds: a.clientIds.filter(id => allowedIds.has(id)) }
+    })
+    if (!slotChanged) return slot
+    changed = true
+    return { ...slot, activities }
+  })
+  return changed ? next : timeSlots
 }

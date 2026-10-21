@@ -1,4 +1,4 @@
-import { buildDayRoster, buildPlannedRoster, classifyDay, isRecoveryAttendee, indexAttendanceByClientId, stripClientsFromSlots, ABSENT_STATUSES, RECOVERY_STATUS } from './dayRoster'
+import { buildDayRoster, buildPlannedRoster, classifyDay, isRecoveryAttendee, indexAttendanceByClientId, keepClientsInSlots, ABSENT_STATUSES, RECOVERY_STATUS } from './dayRoster'
 
 // Helpers
 const client = (id, days, schedule = 'morning', over = {}) => ({
@@ -238,7 +238,7 @@ describe('indexAttendanceByClientId', () => {
   })
 })
 
-describe('stripClientsFromSlots', () => {
+describe('keepClientsInSlots', () => {
   const slots = () => [
     {
       id: 's1',
@@ -253,40 +253,79 @@ describe('stripClientsFromSlots', () => {
     }
   ]
 
-  test('removes the excluded client from every activity across all slots', () => {
-    const result = stripClientsFromSlots(slots(), new Set(['juan']))
+  test('keeps only the allowed clients in every activity across all slots', () => {
+    const result = keepClientsInSlots(slots(), new Set(['ana', 'leo']))
     expect(result[0].activities[0].clientIds).toEqual(['ana'])
     expect(result[0].activities[1].clientIds).toEqual(['leo'])
     expect(result[1].activities[0].clientIds).toEqual(['leo'])
   })
 
-  test('returns the same array reference when exclude set is empty', () => {
+  test('returns the same array reference when every assigned client is allowed', () => {
     const input = slots()
-    expect(stripClientsFromSlots(input, new Set())).toBe(input)
+    expect(keepClientsInSlots(input, new Set(['juan', 'ana', 'leo']))).toBe(input)
   })
 
-  test('returns the same array reference when exclude set is missing', () => {
+  test('returns the input untouched when the allowed set is missing (roster not loaded yet)', () => {
     const input = slots()
-    expect(stripClientsFromSlots(input, undefined)).toBe(input)
+    expect(keepClientsInSlots(input, undefined)).toBe(input)
+  })
+
+  test('an empty allowed set empties every activity', () => {
+    const result = keepClientsInSlots(slots(), new Set())
+    expect(result.flatMap(s => s.activities.map(a => a.clientIds))).toEqual([[], [], []])
   })
 
   test('does not mutate the input slots', () => {
     const input = slots()
-    stripClientsFromSlots(input, new Set(['juan']))
+    keepClientsInSlots(input, new Set(['ana']))
     expect(input[0].activities[0].clientIds).toEqual(['juan', 'ana'])
     expect(input[1].activities[0].clientIds).toEqual(['juan', 'leo'])
   })
 
-  test('leaves activities without excluded clients untouched (same reference)', () => {
-    const input = slots()
-    const result = stripClientsFromSlots(input, new Set(['juan']))
-    // a2 has no excluded client → same object reference preserved
+  test('reuses untouched activities and slots (same references)', () => {
+    const input = [...slots(), { id: 's3', activities: [{ id: 'a4', clientIds: ['ana'] }] }]
+    const result = keepClientsInSlots(input, new Set(['ana', 'leo']))
     expect(result[0].activities[1]).toBe(input[0].activities[1])
+    expect(result[2]).toBe(input[2])
   })
 
-  test('excluding multiple clients empties an activity', () => {
-    const result = stripClientsFromSlots(slots(), new Set(['juan', 'leo']))
-    expect(result[1].activities[0].clientIds).toEqual([])
+  // Los escenarios del pedido: quien ya estaba asignado tiene que salir del grupo
+  // cuando deja de venir ese día, sea por falta, recupero anulado o cambio de plan.
+  describe('with the day roster as the allowed set', () => {
+    const assigned = () => [{ id: 's1', activities: [{ id: 'a1', clientIds: ['ana', 'rec', 'beto'] }] }]
+    const presentIds = (clients, att) => new Set(
+      classifyDay({ clients, dayName: 'monday', matchesShift: morningShift, attendanceByClientId: att }).present.map(c => c.id)
+    )
+    const clients = [client('ana', ['monday']), client('rec', ['tuesday']), client('beto', ['monday'])]
+
+    test('a planned client who gets an absence leaves the group', () => {
+      const att = new Map([['ana', { status: 'absent' }], ['rec', { status: 'recovery' }]])
+      expect(keepClientsInSlots(assigned(), presentIds(clients, att))[0].activities[0].clientIds).toEqual(['rec', 'beto'])
+    })
+
+    test('a recovery client leaves the group when the recovery is annulled (record gone)', () => {
+      const att = new Map()
+      expect(keepClientsInSlots(assigned(), presentIds(clients, att))[0].activities[0].clientIds).toEqual(['ana', 'beto'])
+    })
+
+    test('a client whose plan no longer includes the day, or changed shift, leaves the group', () => {
+      const changed = [client('ana', ['tuesday']), client('rec', ['tuesday']), client('beto', ['monday'], 'afternoon')]
+      const att = new Map([['rec', { status: 'recovery' }]])
+      expect(keepClientsInSlots(assigned(), presentIds(changed, att))[0].activities[0].clientIds).toEqual(['rec'])
+    })
+
+    test('a client who is no longer an active client (baja) leaves the group', () => {
+      const att = new Map([['rec', { status: 'recovery' }]])
+      const withoutBeto = clients.filter(c => c.id !== 'beto')
+      expect(keepClientsInSlots(assigned(), presentIds(withoutBeto, att))[0].activities[0].clientIds).toEqual(['ana', 'rec'])
+    })
+
+    test('undoing the absence brings the client back to the same activity (non destructive)', () => {
+      const input = assigned()
+      const att = new Map([['rec', { status: 'recovery' }]])
+      keepClientsInSlots(input, presentIds(clients, new Map([['ana', { status: 'absent' }]])))
+      expect(keepClientsInSlots(input, presentIds(clients, att))).toBe(input)
+    })
   })
 })
 

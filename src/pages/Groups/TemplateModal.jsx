@@ -239,6 +239,10 @@ function TemplateDetail({
       onApplied()
     } catch (err) {
       console.error('Error applying template:', err)
+      // applyTemplate borra y recrea los horarios: si falló a mitad de camino,
+      // la base pudo quedar a medias, así que se recarga igual.
+      alert('Error al aplicar la plantilla: ' + err.message)
+      onApplied()
     } finally {
       setApplying(false)
     }

@@ -22,10 +22,11 @@ function RecoveryBadge() {
   )
 }
 
-export function PoolClientChip({ client, assignedToAll, isRecovery }) {
+export function PoolClientChip({ client, assignedToAll, isRecovery, disabled = false }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `pool-${client.id}`,
-    data: { type: 'pool-client', client }
+    data: { type: 'pool-client', client },
+    disabled
   })
 
   const initials = `${client.firstName?.[0] || ''}${client.lastName?.[0] || ''}`

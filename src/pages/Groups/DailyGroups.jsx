@@ -10,7 +10,8 @@ import { format, addDays, subDays, isToday, differenceInCalendarDays, startOfDay
 import { es } from 'date-fns/locale/es'
 import { NavArrowLeft, NavArrowRight, Calendar } from 'iconoir-react'
 import { getClients, getAttendanceForDate } from '../../services/api'
-import { classifyDay, buildDayRoster, indexAttendanceByClientId, stripClientsFromSlots, RECOVERY_STATUS } from '../../services/attendance/dayRoster'
+import { classifyDay, buildDayRoster, indexAttendanceByClientId, keepClientsInSlots, ABSENT_STATUSES, RECOVERY_STATUS } from '../../services/attendance/dayRoster'
+import { useRefreshOnFocus } from '../../hooks/useRefreshOnFocus'
 import {
   getTimeSlotsForDate,
   createTimeSlot,
@@ -46,7 +47,9 @@ function dateToStr(d) {
 // ── DailyGroups (main) ───────────────────────────────────────────────────────
 
 export default function DailyGroups() {
-  const today = useMemo(() => startOfDay(new Date()), [])
+  // Estado y no memo: si la pestaña queda abierta de un día para el otro, el
+  // refresco por foco lo actualiza (readOnly, 'Hoy' y la ventana de ±14 días).
+  const [today, setToday] = useState(() => startOfDay(new Date()))
   const cleanupDone = useRef(false)
   // Temp ids for optimistic inserts, reconciled with the server id on success
   const tempIdRef = useRef(0)
@@ -56,8 +59,20 @@ export default function DailyGroups() {
   const [activeShift, setActiveShift] = useState('afternoon')
   const [loading, setLoading] = useState(true)
   const [allClients, setAllClients] = useState([])
+  // 'loading' | 'ok' | 'error'. Sólo 'ok' cuenta como roster confiable: un fallo
+  // no puede pasar por "no viene nadie".
+  const [clientsStatus, setClientsStatus] = useState('loading')
   const [attendanceByClientId, setAttendanceByClientId] = useState(new Map())
+  // Fecha a la que corresponde attendanceByClientId: hasta que coincide con la
+  // fecha elegida, el roster del día no es confiable y no se filtran los grupos.
+  const [attendanceDate, setAttendanceDate] = useState(null)
+  // Fecha cuya carga de asistencia falló (sin datos buenos para mostrar)
+  const [attendanceError, setAttendanceError] = useState(null)
   const [timeSlots, setTimeSlots] = useState([])
+  // A qué día|turno corresponden los timeSlots cargados, y cuál falló al cargar.
+  // Mientras no coincide con la selección, los horarios no son confiables.
+  const [slotsKey, setSlotsKey] = useState(null)
+  const [slotsError, setSlotsError] = useState(null)
   const [showTemplateModal, setShowTemplateModal] = useState(false)
   const [showWeek, setShowWeek] = useState(false)
   const [referenceInfo, setReferenceInfo] = useState({ exists: false, updatedAt: null })
@@ -93,17 +108,31 @@ export default function DailyGroups() {
   }, [allClients, dayName, activeShift, attendanceByClientId])
 
   const shiftClients = dayClassified.present
+  const rosterReady = clientsStatus === 'ok' && attendanceDate === dateStr
+  const rosterError = clientsStatus === 'error' || attendanceError === dateStr
+  const currentSlotsKey = `${dateStr}|${activeShift}`
+  const slotsReady = !loading && slotsKey === currentSlotsKey && slotsError !== currentSlotsKey
 
-  // Absent clients must not appear mapped inside a time slot. An assignment can
-  // outlive presence (assigned while present, then marked absent), so we strip
-  // absentees from the rendered slots without touching the stored assignment.
-  const absentIds = useMemo(
-    () => new Set(dayClassified.absent.map(c => c.id)),
-    [dayClassified]
-  )
+  // Only the day's present roster can appear inside a time slot. An assignment
+  // can outlive presence (assigned while present, then a falta, a recupero
+  // anulado, a plan change or a baja), so the rendered slots keep only present
+  // clients without touching the stored assignment: undoing the change brings
+  // the client back to the same activity.
+  // Días pasados (solo lectura): clients_full trae el plan del mes ACTUAL, así
+  // que la lista blanca podría esconder a quien sí vino con el plan de entonces.
+  // En el histórico sólo se saca a quien tiene una falta registrada ese día.
+  const allowedIds = useMemo(() => {
+    if (!rosterReady) return null
+    if (readOnly) {
+      const ids = new Set(timeSlots.flatMap(s => s.activities.flatMap(a => a.clientIds)))
+      attendanceByClientId.forEach((rec, id) => { if (ABSENT_STATUSES.includes(rec.status)) ids.delete(id) })
+      return ids
+    }
+    return new Set(shiftClients.map(c => c.id))
+  }, [rosterReady, readOnly, timeSlots, attendanceByClientId, shiftClients])
   const displaySlots = useMemo(
-    () => stripClientsFromSlots(timeSlots, absentIds),
-    [timeSlots, absentIds]
+    () => keepClientsInSlots(timeSlots, allowedIds),
+    [timeSlots, allowedIds]
   )
 
   // Meal counts: global to the day, independent of the active shift tab.
@@ -127,7 +156,7 @@ export default function DailyGroups() {
   // Clients assigned to every time slot of the active shift
   const clientsInAllSlots = useMemo(() => {
     const result = new Set()
-    if (displaySlots.length === 0) return result
+    if (!slotsReady || displaySlots.length === 0) return result
     const slotSets = displaySlots.map(slot => {
       const ids = new Set()
       slot.activities.forEach(a => a.clientIds.forEach(id => ids.add(id)))
@@ -137,7 +166,7 @@ export default function DailyGroups() {
       if (slotSets.every(s => s.has(id))) result.add(id)
     }
     return result
-  }, [displaySlots])
+  }, [slotsReady, displaySlots])
 
   // ── Navigation helpers ────────────────────────────────────────────────────
 
@@ -158,16 +187,38 @@ export default function DailyGroups() {
 
   // ── Data loading ──────────────────────────────────────────────────────────
 
+  // Al navegar rápido entre días o turnos, una respuesta vieja puede llegar
+  // después de la nueva: sólo se aplica la del último pedido, y una recarga
+  // pedida para un día/turno que ya no está seleccionado (p. ej. al volver de
+  // 'Aplicar grupo de referencia' después de cambiar de turno) se ignora.
+  const selectionRef = useRef({ dateStr, shift: activeShift })
+  selectionRef.current = { dateStr, shift: activeShift }
+  const slotsRequestRef = useRef(0)
+  const slotsKeyRef = useRef(null)
   const loadSlots = useCallback(async (dStr, shift, { silent = false } = {}) => {
+    const sel = selectionRef.current
+    if (dStr !== sel.dateStr || shift !== sel.shift) return
+    const key = `${dStr}|${shift}`
+    const requestId = ++slotsRequestRef.current
     if (!silent) setLoading(true)
     try {
       const slots = await getTimeSlotsForDate(dStr, shift)
+      if (requestId !== slotsRequestRef.current) return
       setTimeSlots(slots)
+      setSlotsKey(key)
+      setSlotsError(null)
+      slotsKeyRef.current = key
     } catch (err) {
       console.error('Error loading time slots:', err)
-      if (!silent) setTimeSlots([])
+      // Si falla, se muestra el error en vez de horarios que pueden ya no existir
+      // (las recargas silenciosas vienen después de aplicar una plantilla o la
+      // referencia, que borran y recrean los horarios) o de un día vacío que
+      // dejaría aplicar la referencia sin confirmar y pisar los grupos.
+      if (requestId === slotsRequestRef.current) setSlotsError(key)
     } finally {
-      if (!silent) setLoading(false)
+      // El último pedido baja el spinner aunque sea silencioso: puede haber
+      // reemplazado a uno no silencioso que ya no lo va a bajar.
+      if (requestId === slotsRequestRef.current) setLoading(false)
     }
   }, [])
 
@@ -210,6 +261,27 @@ export default function DailyGroups() {
     }
   }
 
+  // Se aplica una respuesta si es más nueva que la última aplicada: una buena
+  // no se descarta porque haya salido otro pedido después (que puede fallar).
+  const clientsRequestRef = useRef(0)
+  const clientsAppliedRef = useRef(0)
+  const clientsOkRef = useRef(false)
+  const loadClients = useCallback(async () => {
+    const requestId = ++clientsRequestRef.current
+    try {
+      const clients = await getClients()
+      if (requestId < clientsAppliedRef.current) return
+      clientsAppliedRef.current = requestId
+      clientsOkRef.current = true
+      setAllClients(clients)
+      setClientsStatus('ok')
+    } catch (err) {
+      console.error('Error loading clients:', err)
+      // Un refresco que falla conserva los clientes ya cargados
+      if (!clientsOkRef.current && requestId === clientsRequestRef.current) setClientsStatus('error')
+    }
+  }, [])
+
   // Initial load: cleanup + load clients
   useEffect(() => {
     async function init() {
@@ -217,37 +289,82 @@ export default function DailyGroups() {
         cleanupDone.current = true
         await cleanupOldGroups(dateToStr(today)).catch(() => {})
       }
-      try {
-        const clients = await getClients()
-        setAllClients(clients)
-      } catch (err) {
-        console.error('Error loading clients:', err)
-      }
+      await loadClients()
     }
     init()
-  }, [today])
+  }, [today, loadClients])
 
-  // Load actual attendance for the selected date (to reflect absences/recoveries).
-  // Clear first so a previous day's absences can't briefly strip clients from
-  // the newly loaded slots — empty attendance means "treat everyone as present".
+  // Actual attendance for a date (to reflect absences/recoveries). Only the
+  // latest request lands, so a slow response for a previous day can't overwrite
+  // the current one. If it fails, good data already loaded for that date is
+  // kept (a failed refresh); with nothing to show, the day is flagged as error.
+  const attendanceRequestRef = useRef(0)
+  const attendanceAppliedRef = useRef(0)
+  // Fecha con asistencia buena ya aplicada (se actualiza al aplicar, no al render)
+  const goodAttendanceDateRef = useRef(null)
+  const loadAttendance = useCallback(async (dStr) => {
+    const requestId = ++attendanceRequestRef.current
+    try {
+      const map = indexAttendanceByClientId(await getAttendanceForDate(dStr))
+      if (requestId < attendanceAppliedRef.current || dStr !== selectionRef.current.dateStr) return
+      attendanceAppliedRef.current = requestId
+      goodAttendanceDateRef.current = dStr
+      setAttendanceByClientId(map)
+      setAttendanceDate(dStr)
+      setAttendanceError(null)
+    } catch (err) {
+      console.error('Error loading attendance:', err)
+      if (requestId !== attendanceRequestRef.current || dStr !== selectionRef.current.dateStr) return
+      if (goodAttendanceDateRef.current !== dStr) setAttendanceError(dStr)
+    }
+  }, [])
+
+  // Changing the date drops the previous day's attendance right away, so its
+  // absences can't leak into the new day while the new one loads.
   useEffect(() => {
-    let cancelled = false
+    goodAttendanceDateRef.current = null
     setAttendanceByClientId(new Map())
-    getAttendanceForDate(dateStr)
-      .then(records => { if (!cancelled) setAttendanceByClientId(indexAttendanceByClientId(records)) })
-      .catch(err => {
-        console.error('Error loading attendance:', err)
-        if (!cancelled) setAttendanceByClientId(new Map())
-      })
-    return () => { cancelled = true }
-  }, [dateStr])
+    setAttendanceDate(null)
+    setAttendanceError(null)
+    loadAttendance(dateStr)
+  }, [dateStr, loadAttendance])
+
+  const retryRoster = () => {
+    if (clientsStatus !== 'ok') loadClients()
+    loadAttendance(dateStr)
+  }
+
+  // Faltas y recuperos se cargan desde la ficha del cliente: al volver a esta
+  // pestaña se refrescan clientes y asistencia (sin vaciar nada mientras tanto).
+  useRefreshOnFocus(() => {
+    const now = startOfDay(new Date())
+    if (now.getTime() !== today.getTime()) {
+      // La pestaña quedó abierta de un día para otro: si estaba en "hoy", pasa
+      // al nuevo hoy (el cambio de fecha recarga todo).
+      if (selectedDate.getTime() === today.getTime()) setSelectedDate(now)
+      setToday(now)
+      setShowTemplateModal(false)
+    }
+    loadClients()
+    loadAttendance(dateStr)
+  })
 
   // Load slots when date or shift changes
   useEffect(() => {
     loadSlots(dateStr, activeShift)
   }, [dateStr, activeShift, loadSlots])
 
+  // Estable: el modal semanal resetea su búsqueda cuando cambia onClose, y el
+  // refresco por foco re-renderiza esta pantalla con el modal abierto.
+  const closeWeek = useCallback(() => setShowWeek(false), [])
+
   // ── Slot CRUD handlers ────────────────────────────────────────────────────
+
+  // Deshace un cambio optimista sólo si la pantalla sigue en el mismo día|turno:
+  // si mientras tanto se cambió de turno o de día, el snapshot es de otro lado.
+  function rollbackSlots(snapshot, snapshotKey) {
+    if (slotsKeyRef.current === snapshotKey) setTimeSlots(snapshot)
+  }
 
   async function handleAddSlot() {
     const position = timeSlots.length
@@ -255,6 +372,7 @@ export default function DailyGroups() {
     const name = `Horario ${position + 1}`
     const tempId = nextTempId()
     const snapshot = timeSlots
+    const snapshotKey = slotsKeyRef.current
     // Optimistic: mostramos el horario al instante, reconciliamos el id real al volver
     setTimeSlots(prev => [...prev, { id: tempId, date: dateStr, shift: activeShift, name, time: defaultTime, position, activities: [] }])
     try {
@@ -262,29 +380,31 @@ export default function DailyGroups() {
       setTimeSlots(prev => prev.map(s => s.id === tempId ? { ...s, id: realId } : s))
     } catch (err) {
       console.error('Error creating time slot:', err)
-      setTimeSlots(snapshot)
+      rollbackSlots(snapshot, snapshotKey)
     }
   }
 
   async function handleUpdateSlot(slotId, fields) {
     const snapshot = timeSlots
+    const snapshotKey = slotsKeyRef.current
     setTimeSlots(prev => prev.map(s => s.id === slotId ? { ...s, ...fields } : s))
     try {
       await updateTimeSlot(slotId, fields)
     } catch (err) {
       console.error('Error updating time slot:', err)
-      setTimeSlots(snapshot)
+      rollbackSlots(snapshot, snapshotKey)
     }
   }
 
   async function handleDeleteSlot(slotId) {
     const snapshot = timeSlots
+    const snapshotKey = slotsKeyRef.current
     setTimeSlots(prev => prev.filter(s => s.id !== slotId))
     try {
       await deleteTimeSlot(slotId)
     } catch (err) {
       console.error('Error deleting time slot:', err)
-      setTimeSlots(snapshot)
+      rollbackSlots(snapshot, snapshotKey)
     }
   }
 
@@ -296,6 +416,7 @@ export default function DailyGroups() {
     const name = 'Nueva actividad'
     const tempId = nextTempId()
     const snapshot = timeSlots
+    const snapshotKey = slotsKeyRef.current
     setTimeSlots(prev => prev.map(s =>
       s.id !== slotId ? s : { ...s, activities: [...s.activities, { id: tempId, name, responsible: null, position, clientIds: [] }] }
     ))
@@ -306,12 +427,13 @@ export default function DailyGroups() {
       ))
     } catch (err) {
       console.error('Error creating activity:', err)
-      setTimeSlots(snapshot)
+      rollbackSlots(snapshot, snapshotKey)
     }
   }
 
   async function handleUpdateActivity(activityId, fields) {
     const snapshot = timeSlots
+    const snapshotKey = slotsKeyRef.current
     setTimeSlots(prev => prev.map(s => ({
       ...s,
       activities: s.activities.map(a => a.id === activityId ? { ...a, ...fields } : a)
@@ -320,12 +442,13 @@ export default function DailyGroups() {
       await updateActivity(activityId, fields)
     } catch (err) {
       console.error('Error updating activity:', err)
-      setTimeSlots(snapshot)
+      rollbackSlots(snapshot, snapshotKey)
     }
   }
 
   async function handleDeleteActivity(activityId) {
     const snapshot = timeSlots
+    const snapshotKey = slotsKeyRef.current
     setTimeSlots(prev => prev.map(s => ({
       ...s,
       activities: s.activities.filter(a => a.id !== activityId)
@@ -334,7 +457,7 @@ export default function DailyGroups() {
       await deleteActivity(activityId)
     } catch (err) {
       console.error('Error deleting activity:', err)
-      setTimeSlots(snapshot)
+      rollbackSlots(snapshot, snapshotKey)
     }
   }
 
@@ -343,6 +466,7 @@ export default function DailyGroups() {
   async function handleRemoveClient(activityId, clientId) {
     // Optimistic: drop the chip immediately, restore snapshot if the delete fails
     const snapshot = timeSlots
+    const snapshotKey = slotsKeyRef.current
     setTimeSlots(prev => prev.map(slot => ({
       ...slot,
       activities: slot.activities.map(a =>
@@ -353,13 +477,14 @@ export default function DailyGroups() {
       await removeClientFromActivity(activityId, clientId)
     } catch (err) {
       console.error('Error removing client:', err)
-      setTimeSlots(snapshot)
+      rollbackSlots(snapshot, snapshotKey)
     }
   }
 
   // ── DnD handlers ──────────────────────────────────────────────────────────
 
   function handleDragStart({ active }) {
+    if (readOnly) return
     const data = active.data.current
     if (data?.type !== 'pool-client' && data?.type !== 'assigned-client') return
 
@@ -382,6 +507,7 @@ export default function DailyGroups() {
   }
 
   function handleDragEnd({ active, over }) {
+    if (readOnly) return
     const client = draggedClient
     const activeType = active.data.current?.type
     setDraggedClient(null)
@@ -409,6 +535,7 @@ export default function DailyGroups() {
 
       // Optimistic move: remove from source activity, add to target
       const snapshot = timeSlots
+      const snapshotKey = slotsKeyRef.current
       setTimeSlots(prev => prev.map(slot => ({
         ...slot,
         activities: slot.activities.map(a => {
@@ -425,7 +552,7 @@ export default function DailyGroups() {
         .then(() => assignClientToActivity(activityId, client.id))
         .catch(err => {
           console.error('Error moving client:', err)
-          setTimeSlots(snapshot)
+          rollbackSlots(snapshot, snapshotKey)
         })
       return
     }
@@ -491,7 +618,8 @@ export default function DailyGroups() {
       {!readOnly && !isWeekend && (
         <button
           onClick={handleAddSlot}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg transition-colors"
+          disabled={!slotsReady || !rosterReady}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           + Agregar horario
         </button>
@@ -521,6 +649,7 @@ export default function DailyGroups() {
             <Button
               variant="secondary"
               onClick={() => setShowTemplateModal(true)}
+              disabled={!slotsReady || !rosterReady}
             >
               Plantillas
             </Button>
@@ -538,7 +667,7 @@ export default function DailyGroups() {
               <Button
                 variant="secondary"
                 onClick={handleApplyReference}
-                disabled={refBusy || !referenceInfo.exists}
+                disabled={refBusy || !referenceInfo.exists || !rosterReady || !slotsReady}
               >
                 Aplicar grupo de referencia
               </Button>
@@ -584,9 +713,9 @@ export default function DailyGroups() {
         {/* Meal counts: global to the day, en un solo container con divisores */}
         {!isWeekend && (
           <div className="flex items-center ml-2 bg-white border border-gray-200 rounded-lg divide-x divide-gray-200">
-            <MealCountBadge label="Desayuno" count={mealCounts.breakfast} />
-            <MealCountBadge label="Almuerzo" count={mealCounts.lunch} />
-            <MealCountBadge label="Merienda" count={mealCounts.snack} />
+            <MealCountBadge label="Desayuno" count={rosterReady ? mealCounts.breakfast : '—'} />
+            <MealCountBadge label="Almuerzo" count={rosterReady ? mealCounts.lunch : '—'} />
+            <MealCountBadge label="Merienda" count={rosterReady ? mealCounts.snack : '—'} />
           </div>
         )}
       </div>
@@ -611,7 +740,17 @@ export default function DailyGroups() {
             {/* Time slots area: toolbar arriba + contenido */}
             <div className="flex-1 min-w-0 pr-4">
               {shiftToolbar}
-              {loading ? (
+              {rosterError ? (
+                <div className="flex flex-col items-center justify-center gap-3 py-16 text-sm text-gray-500">
+                  No se pudieron cargar los asistentes del día.
+                  <Button variant="secondary" size="sm" onClick={retryRoster}>Reintentar</Button>
+                </div>
+              ) : slotsError === currentSlotsKey && !loading ? (
+                <div className="flex flex-col items-center justify-center gap-3 py-16 text-sm text-gray-500">
+                  No se pudieron cargar los horarios del día.
+                  <Button variant="secondary" size="sm" onClick={() => loadSlots(dateStr, activeShift)}>Reintentar</Button>
+                </div>
+              ) : loading || !rosterReady || slotsKey !== currentSlotsKey ? (
                 <div className="flex items-center justify-center py-16">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
                 </div>
@@ -646,6 +785,9 @@ export default function DailyGroups() {
 
             {/* Client pool sidebar (sube al tope, en línea con la toolbar) */}
             <ClientPool
+              loading={!rosterReady || !slotsReady}
+              error={rosterError || slotsError === currentSlotsKey}
+              readOnly={readOnly}
               clients={shiftClients}
               clientsInAllSlots={clientsInAllSlots}
               recoveryIds={recoveryIds}
@@ -670,13 +812,13 @@ export default function DailyGroups() {
         onClose={() => setShowTemplateModal(false)}
         activeShift={activeShift}
         dateStr={dateStr}
-        hasExistingData={timeSlots.length > 0}
+        hasExistingData={slotsReady ? timeSlots.length > 0 : true}
         onApplied={() => loadSlots(dateStr, activeShift, { silent: true })}
       />
 
       <GroupsWeekTable
         isOpen={showWeek}
-        onClose={() => setShowWeek(false)}
+        onClose={closeWeek}
         clients={allClients}
       />
     </div>

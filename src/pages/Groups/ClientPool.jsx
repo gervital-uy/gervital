@@ -15,11 +15,16 @@ const TIER_COLORS = {
 }
 
 export default function ClientPool({
-  clients,
+  loading = false,
+  error = false,
+  readOnly = false,
+  clients: rosterClients,
   clientsInAllSlots,
   recoveryIds,
-  absentClients = []
+  absentClients: rosterAbsent = []
 }) {
+  const clients = loading ? [] : rosterClients
+  const absentClients = loading ? [] : rosterAbsent
   const [search, setSearch] = useState('')
   const [showAbsences, setShowAbsences] = useState(true)
   const [showAssignedAll, setShowAssignedAll] = useState(true)
@@ -46,6 +51,17 @@ export default function ClientPool({
   const filteredAssignedToAll = search ? assignedToAllClients.filter(c => matchName(c, term)) : assignedToAllClients
   const filteredAbsent = search ? absentClients.filter(c => matchName(c, term)) : absentClients
   const absenceTotal = absentClients.length
+
+  // Sin roster confiable no se muestran listas ni mensajes como 'Sin faltas este
+  // día' que parezcan reales
+  if (loading) {
+    return (
+      <div className="w-60 flex-shrink-0 border-l border-gray-200 bg-gray-50 p-4 overflow-y-auto">
+        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Asistentes (—)</div>
+        <p className="text-xs text-gray-400 text-center py-4">{error ? 'Sin datos' : 'Cargando…'}</p>
+      </div>
+    )
+  }
 
   return (
     <div className="w-60 flex-shrink-0 border-l border-gray-200 bg-gray-50 p-4 overflow-y-auto">
@@ -142,6 +158,7 @@ export default function ClientPool({
       <div className="flex flex-col gap-1.5">
         {filtered.map(client => (
           <PoolClientChip
+            disabled={readOnly}
             key={client.id}
             client={client}
             isRecovery={recoveryIds?.has(client.id)}
@@ -168,6 +185,7 @@ export default function ClientPool({
             ) : (
               filteredAssignedToAll.map(client => (
                 <PoolClientChip
+                  disabled={readOnly}
                   key={client.id}
                   client={client}
                   assignedToAll

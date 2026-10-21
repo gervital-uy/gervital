@@ -14,7 +14,10 @@ import {
 } from '../../services/transport/transportService'
 import { SHIFTS, DAY_NAMES, DAY_LABELS_ES } from '../../services/transport/transportConstants'
 import { getAttendanceForDate } from '../../services/api'
-import { classifyDay, indexAttendanceByClientId, RECOVERY_STATUS } from '../../services/attendance/dayRoster'
+import { classifyDay, indexAttendanceByClientId, ABSENT_STATUSES, RECOVERY_STATUS } from '../../services/attendance/dayRoster'
+import { reconcileShifts, parkedIds, historicalRoster, withoutParked } from '../../services/transport/shiftRoster'
+import { useRefreshOnFocus } from '../../hooks/useRefreshOnFocus'
+import { todayStr } from '../../utils/date'
 import TransportMap from './TransportMap'
 import CarAssignmentPanel from './CarAssignmentPanel'
 import TransportWeekTable from './TransportWeekTable'
@@ -34,6 +37,23 @@ function skipWeekend(date, direction) {
   return next
 }
 
+// Roster de cada turno para reconciliar los autos. En días pasados se conserva a
+// quien ya figura ese día y no tiene falta registrada (ver historicalRoster),
+// salvo con `historical: false`: un armado copiado de otra fecha ('Repetir') no
+// es historia de este día.
+function buildRoster(clients, dName, attMap, dStr, shiftsState, { historical = true } = {}) {
+  const isPast = historical && dStr < todayStr()
+  const absentIds = new Set()
+  if (isPast) attMap.forEach((rec, id) => { if (ABSENT_STATUSES.includes(rec.status)) absentIds.add(id) })
+  const knownIds = new Set(clients.map(c => c.id))
+  const roster = {}
+  for (const shift of SHIFTS) {
+    const ids = filterClientsForShift(clients, shift.id, dName, attMap).map(c => c.id)
+    roster[shift.id] = isPast ? historicalRoster(ids, shiftsState?.[shift.id], absentIds, knownIds) : ids
+  }
+  return roster
+}
+
 function buildEmptyShifts() {
   return {
     morning_arrive: { cars: buildDefaultFleet(), unassigned: [] },
@@ -49,8 +69,16 @@ export default function TransportScheduler() {
     return isWeekend(today) ? nextMonday(today) : today
   })
   const [activeShift, setActiveShift] = useState('morning_arrive')
-  const [shifts, setShifts] = useState(buildEmptyShifts)
-  const [isDirty, setIsDirty] = useState(false)
+  // Estado del día en un solo objeto para actualizarlo de forma atómica:
+  // - shifts: autos y "sin asignar" de cada turno
+  // - parked: quienes salieron de un auto porque dejaron de venir, con su lugar,
+  //   mientras el día no se guardó (shiftId → clientId → lugar). Si vuelven a
+  //   venir, vuelven a su auto.
+  // - userEdits / savedEdits: contador de ediciones del usuario (DnD, autos,
+  //   'Repetir') y cuántas ya se guardaron.
+  const [day, setDay] = useState(() => ({ shifts: buildEmptyShifts(), parked: {}, userEdits: 0, savedEdits: 0 }))
+  const { shifts, parked } = day
+  const userDirty = day.userEdits !== day.savedEdits
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [allClients, setAllClients] = useState([])
@@ -63,6 +91,25 @@ export default function TransportScheduler() {
   const [showAbsences, setShowAbsences] = useState(true)
   const [error, setError] = useState(null)
   const [toast, setToast] = useState(null)
+  // Fecha cuyo armado está cargado en `day` (null mientras carga otra)
+  const [loadedDateStr, setLoadedDateStr] = useState(null)
+
+  const dateStr = getDateStr(currentDate)
+  const isPastDay = dateStr < todayStr()
+  // Quien salió de un auto en hoy o un día futuro deja la base desactualizada:
+  // hay que guardar. En días pasados no, para no reescribir la historia.
+  // Los que salieron de un armado copiado con 'Repetir' nunca estuvieron en la
+  // base para este día: se recuerdan para devolverlos, pero no se avisan.
+  const removedPending = useMemo(() => {
+    if (isPastDay || loadedDateStr !== dateStr) return []
+    const fromSaved = {}
+    for (const [shiftId, entries] of Object.entries(parked)) {
+      const kept = Object.fromEntries(Object.entries(entries).filter(([, spot]) => !spot.fromCopy))
+      if (Object.keys(kept).length) fromSaved[shiftId] = kept
+    }
+    return parkedIds(fromSaved)
+  }, [isPastDay, loadedDateStr, dateStr, parked])
+  const isDirty = userDirty || removedPending.length > 0
 
   useEffect(() => {
     if (!isDirty) return
@@ -71,7 +118,6 @@ export default function TransportScheduler() {
     return () => window.removeEventListener('beforeunload', handler)
   }, [isDirty])
 
-  const dateStr = getDateStr(currentDate)
   const dayName = DAY_NAMES[currentDate.getDay()]
   const dayLabelEs = DAY_LABELS_ES[dayName] || dayName
 
@@ -94,21 +140,25 @@ export default function TransportScheduler() {
     return ids
   }, [attendanceByClientId])
 
-  const totalDayClients = useMemo(() => {
-    const ids = new Set()
+  // Roster de cada turno del día: planificados sin falta + recuperos
+  const rosterIdsByShift = useMemo(() => {
+    const byShift = {}
     SHIFTS.forEach(s => {
-      filterClientsForShift(allClients, s.id, dayName, attendanceByClientId).forEach(c => ids.add(c.id))
+      byShift[s.id] = filterClientsForShift(allClients, s.id, dayName, attendanceByClientId).map(c => c.id)
     })
-    return ids.size
+    return byShift
   }, [allClients, dayName, attendanceByClientId])
+
+  const totalDayClients = useMemo(
+    () => new Set(Object.values(rosterIdsByShift).flat()).size,
+    [rosterIdsByShift]
+  )
 
   const shiftCounts = useMemo(() => {
     const counts = {}
-    SHIFTS.forEach(s => {
-      counts[s.id] = filterClientsForShift(allClients, s.id, dayName, attendanceByClientId).length
-    })
+    SHIFTS.forEach(s => { counts[s.id] = rosterIdsByShift[s.id].length })
     return counts
-  }, [allClients, dayName, attendanceByClientId])
+  }, [rosterIdsByShift])
 
   // A shift is "complete" when it has attendees and none are left unassigned
   const shiftComplete = useMemo(() => {
@@ -123,9 +173,15 @@ export default function TransportScheduler() {
 
   // ── Load data ─────────────────────────────────────────────────────────────
 
+  // Al navegar rápido entre días, una respuesta vieja puede llegar después de la
+  // nueva: sólo se aplica la del último pedido.
+  const dayRequestRef = useRef(0)
   const loadDay = useCallback(async (date) => {
+    const requestId = ++dayRequestRef.current
     setLoading(true)
     setError(null)
+    setLoadedDateStr(null)
+    setDay(prev => ({ ...prev, parked: {}, userEdits: 0, savedEdits: 0 }))
     try {
       const dStr = getDateStr(date)
       const dName = DAY_NAMES[date.getDay()]
@@ -136,56 +192,79 @@ export default function TransportScheduler() {
         findLastWeekdayArrangement(dStr),
         getAttendanceForDate(dStr)
       ])
+      if (requestId !== dayRequestRef.current) return
 
       const attMap = indexAttendanceByClientId(attendance)
+
+      // Lo guardado (o la flota por defecto) contra el roster del día: quien
+      // dejó de venir sale del auto y quien viene sin auto queda sin asignar.
+      const saved = {}
+      for (const shift of SHIFTS) {
+        saved[shift.id] = arrangement
+          ? { cars: (arrangement.shifts[shift.id] || { cars: [] }).cars, unassigned: [] }
+          : { cars: buildDefaultFleet(), unassigned: [] }
+      }
+      const roster = buildRoster(clients, dName, attMap, dStr, saved)
+      const { shifts: reconciled, parked: removed } = reconcileShifts(saved, roster)
+
       setAllClients(clients)
       setAttendanceByClientId(attMap)
       setLastWeekdayAvailable(!!lastWeekday)
-
-      if (arrangement) {
-        const newShifts = {}
-        for (const shift of SHIFTS) {
-          const shiftClients = filterClientsForShift(clients, shift.id, dName, attMap)
-          const shiftClientIds = new Set(shiftClients.map(c => c.id))
-          const savedShift = arrangement.shifts[shift.id] || { cars: [] }
-
-          const cars = savedShift.cars.map(car => ({
-            ...car,
-            memberIds: (car.memberIds || []).filter(id => shiftClientIds.has(id))
-          }))
-
-          const assignedIds = new Set(cars.flatMap(c => c.memberIds))
-          const unassigned = shiftClients
-            .filter(c => !assignedIds.has(c.id))
-            .map(c => c.id)
-
-          newShifts[shift.id] = { cars, unassigned }
-        }
-        setShifts(newShifts)
-      } else {
-        const newShifts = {}
-        for (const shift of SHIFTS) {
-          const eligible = filterClientsForShift(clients, shift.id, dName, attMap)
-          newShifts[shift.id] = {
-            cars: buildDefaultFleet(),
-            unassigned: eligible.map(c => c.id)
-          }
-        }
-        setShifts(newShifts)
-      }
-
-      setIsDirty(false)
+      setDay({ shifts: reconciled, parked: removed, userEdits: 0, savedEdits: 0 })
+      setLoadedDateStr(dStr)
     } catch (err) {
+      if (requestId !== dayRequestRef.current) return
       console.error('Error loading transport day:', err)
       setError('Error al cargar los datos de transporte')
     } finally {
-      setLoading(false)
+      if (requestId === dayRequestRef.current) setLoading(false)
     }
   }, [])
 
   useEffect(() => {
     loadDay(currentDate)
   }, [currentDate, loadDay])
+
+  // Faltas y recuperos se cargan desde la ficha del cliente: al volver a esta
+  // pestaña se refrescan clientes y asistencia del día, sin tocar el armado.
+  // El efecto de abajo se encarga de sacar o sumar gente en los autos.
+  // Sólo se aplica la respuesta del último refresco, y nunca si mientras tanto
+  // arrancó la carga de otro día.
+  const loadedDateRef = useRef(loadedDateStr)
+  loadedDateRef.current = loadedDateStr
+  const refreshRequestRef = useRef(0)
+  const refreshAppliedRef = useRef(0)
+  useRefreshOnFocus(async () => {
+    const dStr = loadedDateRef.current
+    if (!dStr) return
+    const requestId = ++refreshRequestRef.current
+    const dayRequest = dayRequestRef.current
+    try {
+      const [clients, attendance] = await Promise.all([getTransportClients(), getAttendanceForDate(dStr)])
+      // Se aplica si es más nueva que la última aplicada (una buena no se
+      // descarta porque haya salido otro refresco después, que puede fallar).
+      if (requestId < refreshAppliedRef.current || dayRequest !== dayRequestRef.current) return
+      refreshAppliedRef.current = requestId
+      setAllClients(clients)
+      setAttendanceByClientId(indexAttendanceByClientId(attendance))
+    } catch (err) {
+      console.error('Error refreshing transport roster:', err)
+    }
+  })
+
+  // Con el día ya cargado, cualquier cambio del roster (falta, recupero marcado
+  // o anulado, cambio de plan, baja) se refleja en los autos al instante; quien
+  // vuelve a venir vuelve a su auto. Trabaja sobre el estado previo (updater),
+  // así nunca pisa un movimiento de DnD encolado.
+  useEffect(() => {
+    if (loading || loadedDateStr !== dateStr) return
+    setDay(prev => {
+      const roster = buildRoster(allClients, dayName, attendanceByClientId, dateStr, prev.shifts)
+      const next = reconcileShifts(prev.shifts, roster, prev.parked)
+      if (next.shifts === prev.shifts && next.parked === prev.parked) return prev
+      return { ...prev, shifts: next.shifts, parked: next.parked }
+    })
+  }, [loading, loadedDateStr, dateStr, dayName, allClients, attendanceByClientId])
 
   // ── Navigation ────────────────────────────────────────────────────────────
 
@@ -201,7 +280,7 @@ export default function TransportScheduler() {
   function confirmNavigate() {
     const target = showUnsavedConfirm
     setShowUnsavedConfirm(null)
-    setIsDirty(false)
+    setDay(prev => ({ ...prev, parked: {}, userEdits: 0, savedEdits: 0 }))
     setCurrentDate(target)
   }
 
@@ -211,14 +290,13 @@ export default function TransportScheduler() {
   activeShiftRef.current = activeShift
 
   const handleShiftStateChange = useCallback((updater) => {
-    setShifts(prev => {
+    setDay(prev => {
       const activeKey = activeShiftRef.current
       const newShiftState = typeof updater === 'function'
-        ? updater(prev[activeKey])
+        ? updater(prev.shifts[activeKey])
         : updater
-      return { ...prev, [activeKey]: newShiftState }
+      return { ...prev, shifts: { ...prev.shifts, [activeKey]: newShiftState }, userEdits: prev.userEdits + 1 }
     })
-    setIsDirty(true)
   }, [])
 
   // ── Save ──────────────────────────────────────────────────────────────────
@@ -235,9 +313,23 @@ export default function TransportScheduler() {
   async function doSave() {
     setShowSaveWarning(false)
     setSaving(true)
+    // Foto de lo que se guarda: al volver sólo se limpia eso. Lo que cambió
+    // mientras tanto (un DnD, alguien que salió por un refresco) sigue pendiente,
+    // y si se navegó a otro día no se toca nada.
+    const saved = day
+    const requestId = dayRequestRef.current
     try {
-      await saveTransportDay(dateStr, shifts)
-      setIsDirty(false)
+      await saveTransportDay(dateStr, saved.shifts)
+      if (requestId === dayRequestRef.current) {
+        // Si los autos cambiaron durante el guardado (un DnD o alguien que volvió
+        // por un refresco), la pantalla ya no es lo guardado: sigue pendiente.
+        setDay(prev => ({
+          ...prev,
+          parked: withoutParked(prev.parked, saved.parked),
+          savedEdits: saved.userEdits,
+          userEdits: prev.shifts === saved.shifts ? prev.userEdits : Math.max(prev.userEdits, saved.userEdits + 1)
+        }))
+      }
       setToast({ type: 'success', message: `Transporte del ${format(currentDate, "d 'de' MMMM", { locale: es })} guardado` })
       setTimeout(() => setToast(null), 3000)
     } catch (err) {
@@ -257,40 +349,47 @@ export default function TransportScheduler() {
 
   async function confirmRepeat() {
     setShowRepeatConfirm(false)
+    // Atado al día cargado: si mientras tanto se navega a otro día, se descarta.
+    const requestId = dayRequestRef.current
     setLoading(true)
     try {
       const lastArrangement = await findLastWeekdayArrangement(dateStr)
-      if (!lastArrangement) return
+      if (!lastArrangement || requestId !== dayRequestRef.current) return
 
       const sourceData = await copyArrangementFromDate(lastArrangement.date)
-      if (!sourceData) return
+      if (!sourceData || requestId !== dayRequestRef.current) return
 
-      const newShifts = {}
+      // Se copian los autos del último mismo día de la semana y se ajustan al
+      // roster de este día (no se copian ausentes ni recuperos de aquel día; si
+      // después vuelven a venir, vuelven al auto copiado).
+      const copied = {}
       for (const shift of SHIFTS) {
-        const eligible = filterClientsForShift(allClients, shift.id, dayName, attendanceByClientId)
-        const eligibleIds = new Set(eligible.map(c => c.id))
         const savedShift = sourceData.shifts[shift.id] || { cars: [] }
-
-        const cars = savedShift.cars.map(car => ({
-          ...car,
-          id: `temp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          memberIds: (car.memberIds || []).filter(id => eligibleIds.has(id))
-        }))
-
-        const assignedIds = new Set(cars.flatMap(c => c.memberIds))
-        const unassigned = eligible.filter(c => !assignedIds.has(c.id)).map(c => c.id)
-
-        newShifts[shift.id] = { cars, unassigned }
+        copied[shift.id] = {
+          cars: savedShift.cars.map(car => ({
+            ...car,
+            id: `temp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+          })),
+          unassigned: []
+        }
       }
-
-      setShifts(newShifts)
-      setIsDirty(true)
+      const roster = buildRoster(allClients, dayName, attendanceByClientId, dateStr, copied, { historical: false })
+      const r = reconcileShifts(copied, roster)
+      const parkedFromCopy = {}
+      for (const [shiftId, entries] of Object.entries(r.parked)) {
+        parkedFromCopy[shiftId] = Object.fromEntries(Object.entries(entries).map(([id, spot]) => [id, { ...spot, fromCopy: true }]))
+      }
+      setDay(prev => ({ ...prev, shifts: r.shifts, parked: parkedFromCopy, userEdits: prev.userEdits + 1 }))
     } catch (err) {
       console.error('Error repeating arrangement:', err)
     } finally {
-      setLoading(false)
+      if (requestId === dayRequestRef.current) setLoading(false)
     }
   }
+
+  // Estable: el modal semanal resetea su búsqueda cuando cambia onClose, y el
+  // refresco por foco re-renderiza esta pantalla con el modal abierto.
+  const closeWeek = useCallback(() => setShowWeek(false), [])
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -335,7 +434,7 @@ export default function TransportScheduler() {
             variant="secondary"
             size="sm"
             onClick={handleRepeatLastWeekday}
-            disabled={!lastWeekdayAvailable || loading}
+            disabled={!lastWeekdayAvailable || loading || loadedDateStr !== dateStr}
             title={lastWeekdayAvailable ? undefined : `No hay datos previos para ${dayLabelEs}`}
           >
             <Refresh className="w-4 h-4" />
@@ -345,7 +444,7 @@ export default function TransportScheduler() {
             size="sm"
             onClick={handleSave}
             loading={saving}
-            disabled={loading || !isDirty}
+            disabled={loading || !isDirty || loadedDateStr !== dateStr}
           >
             Guardar día
           </Button>
@@ -399,6 +498,18 @@ export default function TransportScheduler() {
           </button>
         </div>
       </div>
+
+      {/* Quienes salieron de un auto por dejar de venir: falta guardar el día */}
+      {removedPending.length > 0 && !loading && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 sm:px-6 lg:px-8 py-2 text-sm text-amber-800">
+          {(() => {
+            const n = removedPending.length
+            const names = removedPending.map(id => clientsById.get(id)).filter(Boolean).map(c => `${c.firstName} ${c.lastName}`)
+            const who = names.length === n ? names.join(', ') : `${n} persona${n !== 1 ? 's' : ''}`
+            return `${who} ${n !== 1 ? 'salieron' : 'salió'} de un auto porque ya no viaja${n !== 1 ? 'n' : ''} en ese turno (falta, recupero anulado o cambio de plan). Guardá el día para que quede registrado.`
+          })()}
+        </div>
+      )}
 
       {/* Main content */}
       {loading ? (
@@ -456,7 +567,7 @@ export default function TransportScheduler() {
       {/* Weekly overview */}
       <TransportWeekTable
         isOpen={showWeek}
-        onClose={() => setShowWeek(false)}
+        onClose={closeWeek}
         clients={allClients}
       />
 
