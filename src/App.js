@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import Layout from './components/Layout/Layout'
@@ -13,6 +14,9 @@ import TransportScheduler from './pages/Transport/TransportScheduler'
 import ChurnBoard from './pages/Churn/ChurnBoard'
 import RequireRole from './components/Layout/RequireRole'
 import './App.css'
+
+// Dashboard v2 (rediseño): se carga aparte para no sumar peso al bundle de quien no lo ve.
+const DashboardV2 = lazy(() => import('./pages/DashboardV2/DashboardV2'))
 
 function App() {
   return (
@@ -33,6 +37,12 @@ function App() {
             <Route path="grupos" element={<DailyGroups />} />
             <Route path="transporte" element={<TransportScheduler />} />
             <Route path="bajas" element={<ChurnBoard />} />
+            <Route element={<RequireRole feature="dashboard_v2" />}>
+              <Route
+                path="dashboard-v2"
+                element={<Suspense fallback={null}><DashboardV2 /></Suspense>}
+              />
+            </Route>
             <Route element={<RequireRole feature="users" />}>
               <Route path="gerencia" element={<Gerencia />} />
             </Route>

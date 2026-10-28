@@ -1,0 +1,46 @@
+import { render, screen, fireEvent } from '@testing-library/react'
+import DashboardV2 from './DashboardV2'
+
+// date-fns/locale es ESM y jest (CRA) no lo transforma; el navegador de meses no es lo
+// que se prueba acá.
+jest.mock('../../components/ui/MonthNavigator', () => () => null)
+
+let mockRole = 'superadmin'
+jest.mock('../../context/AuthContext', () => {
+  const actual = jest.requireActual('../../context/AuthContext')
+  return { ...actual, useAuth: () => ({ hasAccess: f => actual.roleHasAccess(mockRole, f) }) }
+})
+
+const tabLabels = () => screen.queryAllByRole('button')
+  .map(b => b.textContent)
+  .filter(t => ['Gestión CFP', 'Finanzas', 'Comercial', 'Asistencia'].includes(t))
+
+describe('DashboardV2 — shell', () => {
+  test('superadmin ve las cuatro pestañas en el orden de la maqueta y abre en Gestión CFP', () => {
+    mockRole = 'superadmin'
+    render(<DashboardV2 />)
+    expect(tabLabels()).toEqual(['Gestión CFP', 'Finanzas', 'Comercial', 'Asistencia'])
+    expect(screen.getByText('Cobranza')).toBeInTheDocument()
+  })
+
+  test('cambiar de pestaña muestra sus tarjetas', () => {
+    mockRole = 'superadmin'
+    render(<DashboardV2 />)
+    fireEvent.click(screen.getByRole('button', { name: 'Finanzas' }))
+    expect(screen.getByText('Punto de equilibrio')).toBeInTheDocument()
+    expect(screen.queryByText('Cobranza')).not.toBeInTheDocument()
+  })
+
+  test('cada pestaña respeta su feature: admin ve solo Gestión CFP y Asistencia', () => {
+    mockRole = 'admin'
+    render(<DashboardV2 />)
+    expect(tabLabels()).toEqual(['Gestión CFP', 'Asistencia'])
+  })
+
+  test('un rol sin secciones ve un aviso y no se rompe', () => {
+    mockRole = 'operador'
+    render(<DashboardV2 />)
+    expect(tabLabels()).toEqual([])
+    expect(screen.getByText(/no tiene acceso/)).toBeInTheDocument()
+  })
+})

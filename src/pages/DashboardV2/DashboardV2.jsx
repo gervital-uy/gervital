@@ -1,0 +1,106 @@
+import { useState, useMemo } from 'react'
+import { useAuth } from '../../context/AuthContext'
+import MonthNavigator from '../../components/ui/MonthNavigator'
+import SectionPlaceholder from './SectionPlaceholder'
+import { PLATFORM_START, currentMonthStart } from './monthWindow'
+
+// Pestañas del dashboard v2, en el orden de la maqueta. Cada una pide su feature y
+// abre la primera disponible. `upcoming` describe la sección mientras no está portada;
+// cuando una fase la porta, se le agrega `Component` y el placeholder deja de verse.
+const SECTIONS = [
+  {
+    id: 'gestion',
+    label: 'Gestión CFP',
+    feature: 'billing',
+    upcoming: [
+      { title: 'Cobranza', hint: 'Padrón del mes con previsto, cobrado y pendiente; cobro por fila y en lote.' },
+      { title: 'Facturación', hint: 'Qué falta facturar, IVA del mes, facturas trabadas y emisión en lote.' },
+      { title: 'Promociones y otros descuentos', hint: 'Promos prepagas, descuentos puntuales, cobertura e historial.' }
+    ]
+  },
+  {
+    id: 'finanzas',
+    label: 'Finanzas',
+    feature: 'dashboard_financials',
+    upcoming: [
+      { title: 'Evolución', hint: 'Ingresos contra gastos mes a mes, tendencia y cascada de márgenes.' },
+      { title: 'Resultado del mes', hint: 'Ingresos, gastos, resultado y caja, con sus desgloses.' },
+      { title: 'Gastos por categoría', hint: 'Cada categoría con su variación contra el mes anterior.' },
+      { title: 'Caja e impuestos', hint: 'Cuánta plata entró y cuánto IVA corresponde.' },
+      { title: 'Puente de rentabilidad', hint: 'De los ingresos a la ganancia neta, bloque por bloque.' },
+      { title: 'Ingreso por línea', hint: 'Asistencia y transporte por separado.' },
+      { title: 'Transporte por distancia', hint: 'Lo que cobra y lo que cuesta cada banda de distancia.' },
+      { title: 'Punto de equilibrio', hint: 'Cuánto deja cada usuario y cuántos hacen falta.' }
+    ]
+  },
+  {
+    id: 'comercial',
+    label: 'Comercial',
+    feature: 'dashboard_financials',
+    upcoming: [
+      { title: 'Cartera', hint: 'Activos, MRR, churn, MRR ganado y perdido, permanencia.' },
+      { title: 'Ocupación', hint: 'Cupos por turno y mapa de calor por día.' },
+      { title: 'Composición y aporte', hint: 'La base por plan, horario, tier y edad, y cuánto factura cada segmento.' },
+      { title: 'Altas, bajas y retención', hint: 'Flujo de clientes, bajas por motivo y cohortes.' }
+    ]
+  },
+  {
+    id: 'asistencia',
+    label: 'Asistencia',
+    feature: 'statistics',
+    upcoming: [
+      { title: 'Asistencia del mes', hint: 'Tasa real, faltas, recuperos y licencias.' },
+      { title: 'Por segmento y tendencia', hint: 'Tasa por plan, horario y tier, mes a mes.' },
+      { title: 'Real contra contratada', hint: 'La semana promedio, día por día.' },
+      { title: 'Motivación y período de prueba', hint: 'Seguimiento de motivación y conversión de pruebas.' }
+    ]
+  }
+]
+
+export default function DashboardV2() {
+  const { hasAccess } = useAuth()
+
+  const available = useMemo(() => SECTIONS.filter(s => hasAccess(s.feature)), [hasAccess])
+  const [tab, setTab] = useState(() => available[0]?.id)
+  const [maxMonth] = useState(currentMonthStart)
+  const [selected, setSelected] = useState(() => ({ year: maxMonth.getFullYear(), month: maxMonth.getMonth() }))
+
+  const active = available.find(s => s.id === tab) || available[0]
+
+  return (
+    <div className="-mt-8 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-8 min-h-full bg-gray-50">
+      {/* pestañas de sección + navegador de mes en una sola fila, como en legacy */}
+      <div className="flex items-end justify-between gap-4 border-b border-gray-200 mb-6">
+        <div className="flex gap-1 overflow-x-auto overflow-y-hidden">
+          {available.map(s => {
+            const isActive = s.id === active?.id
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setTab(s.id)}
+                className={`relative px-4 py-3 text-sm font-semibold whitespace-nowrap transition-colors ${
+                  isActive ? 'text-indigo-700' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {s.label}
+                {isActive && <span className="absolute left-3 right-3 bottom-0 h-0.5 rounded bg-indigo-600" />}
+              </button>
+            )
+          })}
+        </div>
+        <div className="pb-1.5 shrink-0">
+          <MonthNavigator selected={selected} onChange={setSelected} minDate={PLATFORM_START} maxDate={maxMonth} />
+        </div>
+      </div>
+
+      {!active ? (
+        <p className="text-sm text-gray-500">Tu rol no tiene acceso a ninguna sección del dashboard v2.</p>
+      ) : active.Component ? (
+        <active.Component selected={selected} onSelectMonth={setSelected} />
+      ) : (
+        <SectionPlaceholder cards={active.upcoming} />
+      )}
+    </div>
+  )
+}

@@ -23,3 +23,16 @@ describe('roleHasAccess — attendance_edit', () => {
     expect(roleHasAccess('superadmin', 'no_existe')).toBe(false)
   })
 })
+
+describe('roleHasAccess — dashboard_v2', () => {
+  test('arranca solo para superadmin', () => {
+    expect(roleHasAccess('superadmin', 'dashboard_v2')).toBe(true)
+    expect(roleHasAccess('admin', 'dashboard_v2')).toBe(false)
+    expect(roleHasAccess('operador', 'dashboard_v2')).toBe(false)
+  })
+
+  test('el dashboard legacy sigue visible para todos los roles', () => {
+    expect(roleHasAccess('operador', 'clients')).toBe(true)
+    expect(roleHasAccess('admin', 'clients')).toBe(true)
+  })
+})

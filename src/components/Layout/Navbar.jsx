@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Group, LogOut, Settings, Shop, Calendar, StatsReport, Lock, Bus, UserXmark } from 'iconoir-react'
+import { Group, LogOut, Settings, Shop, Calendar, StatsReport, Lock, Bus, UserXmark, DashboardSpeed } from 'iconoir-react'
 import { useAuth } from '../../context/AuthContext'
 import ChangePasswordModal from './ChangePasswordModal'
 
@@ -22,6 +22,7 @@ export default function Navbar() {
 
   const navItems = [
     { to: '/dashboard', label: 'Dashboard', icon: StatsReport, access: 'clients' },
+    { to: '/dashboard-v2', label: 'v2', title: 'Dashboard v2', icon: DashboardSpeed, access: 'dashboard_v2' },
     { to: '/clientes', label: 'Clientes', icon: Group, access: 'clients' },
     { to: '/grupos', label: 'Grupos', icon: Calendar, access: 'clients' },
     { to: '/transporte', label: 'Transporte', icon: Bus, access: 'clients' },
@@ -49,6 +50,8 @@ export default function Navbar() {
                     <NavLink
                       key={item.to}
                       to={item.to}
+                      title={item.title}
+                      aria-label={item.title}
                       className={({ isActive }) =>
                         `flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                           isActive

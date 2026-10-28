@@ -16,7 +16,10 @@ const FEATURE_ROLES = {
   users: ['superadmin'],
   promotions: ['superadmin'],
   statistics: ['admin', 'superadmin'],
-  expense_settings: ['admin', 'superadmin']
+  expense_settings: ['admin', 'superadmin'],
+  // Dashboard v2 (rediseño, convive con el legacy): arranca solo para superadmin.
+  // Cada pestaña además pide su propia feature (billing, dashboard_financials, statistics).
+  dashboard_v2: ['superadmin']
 }
 
 // Pure helper usable outside the hook (e.g. in nested components with only `role`)
