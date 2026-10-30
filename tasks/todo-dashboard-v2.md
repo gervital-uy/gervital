@@ -45,7 +45,10 @@ rendimiento también se descartan: se calcula en el cliente con lo que ya existe
       Revisión adversarial: 29 confirmados y corregidos (días prorrateados = cobrables / 4×frec,
       bajas y reingresos desde los períodos de inactividad, heredados no son alta, IVA emitido con
       las líneas guardadas, orden por el monto visible, modo trabadas, móvil, ids en inglés).
-- [ ] Fase 3 — Cobranza con escrituras
+- [x] Fase 3 — Cobranza con escrituras (sin probar contra producción: falta el cliente de prueba)
+      Mismas funciones que la ficha (mark_month_paid sin monto / collect_promo; unmarkMonthPaid /
+      uncollect_promo). Antes de escribir relee monthly_invoices para no pisar un cobro o una factura
+      registrados desde otro lado (mark_month_paid no lo controla). Revisión: 29 confirmados y corregidos.
 - [ ] B1 — facturación de meses de promo (edge function biller + invoiceAmounts.js)
 - [ ] Fase 4 — Facturación
 - [ ] Fase 5 — Promociones y otros descuentos

@@ -83,7 +83,7 @@ export function planText(r) {
 
 // collect_promo marca el ancla como monto ajustado aunque se cobre el paquete
 // pactado: en el ancla solo es "pactado" si la plata difiere del paquete.
-const isNegotiated = r => r.isAmountOverridden && (r.promoIndex == null
+export const isNegotiated = r => r.isAmountOverridden && (r.promoIndex == null
   || (r.promoIndex === 1 && Math.abs((r.paidAmount ?? 0) - (r.promoTotalAmount ?? 0)) > 1))
 
 // Segunda línea en Cobranza: el plan y lo que explica el monto.

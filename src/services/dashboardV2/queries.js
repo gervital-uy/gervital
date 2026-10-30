@@ -45,3 +45,18 @@ export async function loadPadron({ year, month }) {
   const sources = await getPadronSources(year, month)
   return buildPadron(sources, { year, month, today: todayStr() })
 }
+
+// Estado actual de cobro y facturación de unos clientes en el mes, para no escribir
+// sobre un padrón viejo: si otra persona cobró o facturó desde la ficha mientras
+// esta pantalla estaba abierta, mark_month_paid lo pisaría sin avisar.
+export async function getMonthPaymentStates(year, month, clientIds) {
+  if (!clientIds.length) return new Map()
+  const rows = await supabase
+    .from('monthly_invoices')
+    .select('client_id, payment_status, invoice_status, promo_id')
+    .eq('year', year)
+    .eq('month', month)
+    .in('client_id', clientIds)
+    .then(unwrap)
+  return new Map(rows.map(r => [r.client_id, r]))
+}

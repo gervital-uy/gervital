@@ -12,11 +12,12 @@ import PaymentDateCell from './PaymentDateCell'
 const COLUMNS = {
   collection: [
     { label: 'Cliente', width: '25%', cls: 'px-4' },
-    { label: 'Estado', width: '11%', cls: 'px-2' },
-    { label: 'Detalle de transferencia', width: '27%', cls: 'px-2' },
-    { label: 'Monto', width: '11%', cls: 'px-3 text-right tracking-normal' },
-    { label: 'Fecha de pago', width: '14%', cls: 'px-2 text-center' },
-    { label: 'Acción', width: '12%', cls: 'px-3 text-center tracking-normal' }
+    { label: 'Estado', width: '12%', cls: 'px-2' },
+    { label: 'Detalle de transferencia', width: '30%', cls: 'px-2' },
+    { label: 'Monto', width: '12%', cls: 'px-3 text-right tracking-normal' },
+    { label: 'Fecha de pago', width: '140px', cls: 'px-2 text-center' },
+    // El botón más ancho ("Marcar cobrado") necesita su ancho fijo.
+    { label: 'Acción', width: '140px', cls: 'px-3 text-center tracking-normal' }
   ],
   invoicing: [
     { label: 'Cliente', width: '30%', cls: 'px-4' },
@@ -48,6 +49,7 @@ function PaymentDate({ row, year, month, actions }) {
   }
   if (actions?.canCollect(row)) {
     const value = actions.dates[row.id] || ''
+    const invalid = !!value && !!actions.dateError(row)
     const offset = paymentOffset(value, year, month)
     return (
       <>
@@ -56,10 +58,13 @@ function PaymentDate({ row, year, month, actions }) {
           min={actions.dateWindow.min}
           max={actions.dateWindow.max}
           disabled={actions.busy}
+          invalid={invalid}
           onChange={v => actions.onDate(row.id, v)}
           label={`Fecha de pago de ${row.firstName} ${row.lastName}`}
         />
-        {offset && <span className={`block mt-0.5 text-[10px] font-medium ${OFFSET_CLS[offset]}`}>pago {offset}</span>}
+        {invalid
+          ? <span className="block mt-0.5 text-[10px] font-medium text-rose-600">fuera de rango</span>
+          : offset && <span className={`block mt-0.5 text-[10px] font-medium ${OFFSET_CLS[offset]}`}>pago {offset}</span>}
       </>
     )
   }
@@ -69,20 +74,25 @@ function PaymentDate({ row, year, month, actions }) {
 function RowAction({ row, actions }) {
   if (actions.canCollect(row)) {
     const dateError = actions.dateError(row)
+    const failure = actions.failures[row.id]
     return (
-      <button
-        type="button"
-        onClick={e => { e.stopPropagation(); actions.onPayRow(row) }}
-        disabled={actions.busy || !!dateError}
-        title={dateError ? 'Cargá primero la fecha del pago' : undefined}
-        className="text-[12px] font-semibold text-emerald-700 hover:text-emerald-800 rounded-lg border border-emerald-200 px-2.5 py-1 hover:bg-emerald-50 transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-      >
-        {row.promoIndex === 1 ? 'Cobrar paquete' : 'Marcar cobrado'}
-      </button>
+      <>
+        <button
+          type="button"
+          onClick={e => { e.stopPropagation(); actions.onPayRow(row) }}
+          disabled={actions.busy || !!dateError}
+          title={dateError || undefined}
+          className="text-[12px] font-semibold text-emerald-700 hover:text-emerald-800 rounded-lg border border-emerald-200 px-2.5 py-1 hover:bg-emerald-50 transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+        >
+          {row.promoIndex === 1 ? 'Cobrar paquete' : 'Marcar cobrado'}
+        </button>
+        {failure && <span className="block mt-0.5 text-[10px] font-medium text-rose-600" title={failure}>no se registró</span>}
+      </>
     )
   }
   if (row.paymentStatus === 'paid') {
     const block = actions.revertBlock(row)
+    if (block && row.invoiceStatus === 'invoiced') return <span className="text-[11.5px] text-gray-400" title={block}>facturada</span>
     if (block) return <span className="text-[12px] text-gray-300" title={block}>{DASH}</span>
     return (
       <button
@@ -104,12 +114,14 @@ function RowAction({ row, actions }) {
 export default function CfpTable({ domain, rows, year, month, actions }) {
   const isCollection = domain === 'collection'
   const columns = COLUMNS[domain].filter(c => isCollection ? (actions || c.label !== 'Acción') : true)
-  const selectedRows = isCollection && actions ? rows.filter(r => actions.selected.has(r.id)) : []
+  const selectedRows = isCollection && actions ? rows.filter(r => actions.selected.has(r.id) && actions.canCollect(r)) : []
   const selectedTotal = selectedRows.reduce((s, r) => s + r.due, 0)
   const ready = actions?.ready || []
 
   return (
-    <Card className="rounded-2xl border-gray-100 shadow-[0_1px_2px_rgba(16,24,40,0.04)] overflow-hidden">
+    // overflow-clip y no overflow-hidden: recorta las esquinas sin volverse el
+    // contenedor de scroll, así la barra de selección queda pegada al pie de la ventana.
+    <Card className="rounded-2xl border-gray-100 shadow-[0_1px_2px_rgba(16,24,40,0.04)] overflow-clip">
       {/* Cobros preparados: cada fila se registra con la fecha que se le cargó, así
           que no hace falta seleccionar nada. */}
       {isCollection && ready.length > 0 && (
@@ -120,6 +132,7 @@ export default function CfpTable({ domain, rows, year, month, actions }) {
             <span className="text-emerald-700"> · </span>
             <span className="font-semibold tabular-nums">{money(ready.reduce((s, r) => s + r.due, 0))}</span>
             {actions.hiddenReady > 0 && <span className="text-emerald-700"> · {actions.hiddenReady} fuera de este filtro</span>}
+            {actions.outOfRange > 0 && <span className="text-rose-600"> · {plural(actions.outOfRange, 'fecha fuera de rango', 'fechas fuera de rango')}</span>}
           </span>
           <button
             type="button"
@@ -141,7 +154,7 @@ export default function CfpTable({ domain, rows, year, month, actions }) {
       )}
 
       <div className="overflow-x-auto">
-        <table className={`w-full text-left table-fixed ${isCollection ? 'min-w-[820px]' : 'min-w-[640px]'}`}>
+        <table className={`w-full text-left table-fixed ${isCollection ? 'min-w-[900px]' : 'min-w-[640px]'}`}>
           <colgroup>
             {columns.map(c => <col key={c.label} style={{ width: c.width }} />)}
           </colgroup>

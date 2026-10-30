@@ -1,6 +1,7 @@
 import { useId } from 'react'
 import Sheet from '../../ui/Sheet'
 import { formatShortDate, money } from '../../format'
+import { isNegotiated } from './cfpText'
 
 // Confirmación antes de revertir un cobro: mueve plata registrada, así que dice
 // qué se deshace. En un ancla se deshace el paquete entero.
@@ -24,6 +25,11 @@ export default function RevertSheet({ row, busy, onCancel, onConfirm }) {
         </p>
         {isPackage && (
           <p>Los meses siguientes de la promo dejan de estar cubiertos. La promo sigue pactada y se puede volver a cobrar.</p>
+        )}
+        {isNegotiated(row) && (
+          <p className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-[12.5px] text-amber-900">
+            Este cobro tenía un monto pactado. Si lo volvés a registrar desde acá se toma el monto calculado: para respetar el pactado, registralo desde la ficha del cliente.
+          </p>
         )}
       </div>
       <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-end gap-2">

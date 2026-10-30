@@ -1279,8 +1279,8 @@ video {
   min-width: 6rem;
 }
 
-.min-w-\[820px\] {
-  min-width: 820px;
+.min-w-\[900px\] {
+  min-width: 900px;
 }
 
 .max-w-0 {
@@ -1720,6 +1720,10 @@ video {
 
 .overflow-hidden {
   overflow: hidden;
+}
+
+.overflow-clip {
+  overflow: clip;
 }
 
 .overflow-x-auto {
@@ -3730,6 +3734,11 @@ video {
 .hover\:bg-red-700:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(185 28 28 / var(--tw-bg-opacity, 1));
+}
+
+.hover\:bg-rose-100:hover {
+  --tw-bg-opacity: 1;
+  background-color: rgb(255 228 230 / var(--tw-bg-opacity, 1));
 }
 
 .hover\:bg-rose-50:hover {

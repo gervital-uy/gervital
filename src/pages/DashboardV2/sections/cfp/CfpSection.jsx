@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Card from '../../../../components/ui/Card'
 import { useAuth } from '../../../../context/AuthContext'
 import { todayStr } from '../../../../utils/date'
@@ -46,22 +46,41 @@ export default function CfpSection({ selected }) {
   const [query, setQuery] = useState('')
   const [order, setOrder] = useState('plan')
 
-  // Cobros: fecha cargada por fila, selección, la hoja abierta y el resultado.
+  // Cobros: fecha cargada por fila, selección, lo que falló (por fila), la hoja
+  // abierta y el resultado de la última acción.
   const [dates, setDates] = useState({})
   const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [failures, setFailures] = useState({})
   const [paying, setPaying] = useState(null)
   const [reverting, setReverting] = useState(null)
   const [busy, setBusy] = useState(false)
   const [outcome, setOutcome] = useState(null)
+  const canManagePromos = hasAccess('promotions')
 
-  // El modo trabadas, las fechas cargadas y la selección son del mes en que se
+  // El mes a la vista: una acción que termina después de cambiar de mes no deja su
+  // resultado ni sus fechas en el mes nuevo.
+  const monthKey = `${selected.year}-${selected.month}`
+  const monthKeyRef = useRef(monthKey)
+  useEffect(() => { monthKeyRef.current = monthKey }, [monthKey])
+
+  // El modo trabadas, las fechas, la selección y los avisos son del mes en que se
   // pidieron: al cambiar de mes se limpian.
   useEffect(() => {
     setOnlyBlocked(false)
     setDates({})
     setSelectedIds(new Set())
+    setFailures({})
     setOutcome(null)
   }, [selected.year, selected.month])
+
+  // Lo que ya no se puede cobrar (se cobró, cambió la promo) sale de la selección y
+  // de las fechas cargadas cuando llega el padrón nuevo.
+  useEffect(() => {
+    if (!rows) return
+    const open = new Set(rows.filter(r => canCollect(r, { canManagePromos })).map(r => r.id))
+    setSelectedIds(s => ([...s].every(id => open.has(id)) ? s : new Set([...s].filter(id => open.has(id)))))
+    setDates(d => (Object.keys(d).every(id => open.has(id)) ? d : Object.fromEntries(Object.entries(d).filter(([id]) => open.has(id)))))
+  }, [rows, canManagePromos])
 
   const status = STATUS_FILTERS[domain].some(s => s.key === statusByDomain[domain]) ? statusByDomain[domain] : 'pending'
   const totals = useMemo(() => (rows ? { collection: collectionTotals(rows), invoicing: invoicingTotals(rows) } : null), [rows])
@@ -85,60 +104,91 @@ export default function CfpSection({ selected }) {
   const changeStatus = key => { setOnlyBlocked(false); setSelectedIds(new Set()); setStatusByDomain(s => ({ ...s, [domain]: key })) }
 
   const { year, month } = selected
-  const rules = { canManagePromos: hasAccess('promotions') }
+  const rules = { canManagePromos }
   const dateWindow = paymentDateWindow(year, month, todayStr())
   const nameOf = id => {
     const r = rows?.find(x => x.id === id)
     return r ? `${r.firstName} ${r.lastName}`.trim() : id
   }
   const collectable = rows ? rows.filter(r => canCollect(r, rules)) : []
-  const ready = collectable.filter(r => dates[r.id] && !paymentDateError(dates[r.id], dateWindow))
+  const withDate = collectable.filter(r => dates[r.id])
+  const ready = withDate.filter(r => !paymentDateError(dates[r.id], dateWindow))
+  // Hasta que llega el padrón recargado, lo recién cobrado todavía figura pendiente.
+  const locked = busy || padron.refreshing
 
-  const pay = async (toPay, dateFor, note) => {
+  // `sheetDate`: la fecha de la hoja, que les queda cargada a las filas que fallan
+  // para reintentar desde el lote.
+  const pay = async (toPay, dateFor, note, sheetDate = null) => {
+    const key = monthKey
     setBusy(true)
     setOutcome(null)
-    const results = await registerPayments(toPay, { year, month, dateFor, note })
-    const okIds = results.filter(r => r.ok).map(r => r.id)
-    setDates(d => Object.fromEntries(Object.entries(d).filter(([id]) => !okIds.includes(id))))
-    setSelectedIds(s => without(s, okIds))
-    setOutcome({ kind: 'paid', ok: okIds.length, failed: results.filter(r => !r.ok).map(r => ({ name: nameOf(r.id), error: r.error })) })
+    let results
+    try {
+      results = await registerPayments(toPay, { year, month, dateFor, note })
+    } catch (error) {
+      results = toPay.map(r => ({ id: r.id, ok: false, error: error.message }))
+    }
+    // Siempre se recarga: un fallo puede venir de un padrón viejo.
+    invalidate('padron')
     setBusy(false)
     setPaying(null)
-    if (okIds.length) invalidate('padron')
+    if (monthKeyRef.current !== key) return
+    const okIds = results.filter(r => r.ok).map(r => r.id)
+    const failed = results.filter(r => !r.ok)
+    setDates(d => {
+      const next = Object.fromEntries(Object.entries(d).filter(([id]) => !okIds.includes(id)))
+      if (sheetDate) for (const f of failed) next[f.id] = sheetDate
+      return next
+    })
+    setSelectedIds(s => without(s, okIds))
+    setFailures(f => ({
+      ...Object.fromEntries(Object.entries(f).filter(([id]) => !okIds.includes(id))),
+      ...Object.fromEntries(failed.map(r => [r.id, r.error]))
+    }))
+    setOutcome({ kind: 'paid', ok: okIds.length, failed: failed.map(r => ({ name: nameOf(r.id), error: r.error })) })
   }
 
   const revert = async row => {
+    const key = monthKey
+    const name = nameOf(row.id)
     setBusy(true)
     setOutcome(null)
+    let failed = []
     try {
       await revertPayment(row, { year, month })
-      setOutcome({ kind: 'reverted', ok: 1, failed: [], name: nameOf(row.id) })
-      invalidate('padron')
     } catch (error) {
-      setOutcome({ kind: 'reverted', ok: 0, failed: [{ name: nameOf(row.id), error: error.message }] })
+      failed = [{ name, error: error.message }]
     }
+    invalidate('padron')
     setBusy(false)
     setReverting(null)
+    if (monthKeyRef.current !== key) return
+    setOutcome({ kind: 'reverted', ok: failed.length ? 0 : 1, failed, name })
   }
 
-  const sharedDate = ids => {
-    const loaded = [...new Set(ids.map(r => dates[r.id]).filter(Boolean))]
+  const sharedDate = list => {
+    const loaded = [...new Set(list.map(r => dates[r.id]).filter(Boolean))]
     if (loaded.length === 1) return loaded[0]
     const today = todayStr()
     return today >= dateWindow.min && today <= dateWindow.max ? today : ''
   }
 
   const actions = {
-    busy,
+    busy: locked,
     dateWindow,
     dates,
+    failures,
     ready,
+    outOfRange: withDate.length - ready.length,
     hiddenReady: ready.filter(r => !visible.some(v => v.id === r.id)).length,
     selected: selectedIds,
     canCollect: r => canCollect(r, rules),
     revertBlock: r => revertBlock(r, rules),
     dateError: r => paymentDateError(dates[r.id], dateWindow),
-    onDate: (id, value) => setDates(d => ({ ...d, [id]: value })),
+    onDate: (id, value) => {
+      setDates(d => ({ ...d, [id]: value }))
+      setFailures(f => (id in f ? Object.fromEntries(Object.entries(f).filter(([k]) => k !== id)) : f))
+    },
     onClearDates: () => setDates({}),
     onToggle: id => setSelectedIds(s => (s.has(id) ? without(s, [id]) : new Set([...s, id]))),
     onClearSelection: () => setSelectedIds(new Set()),
@@ -205,13 +255,13 @@ export default function CfpSection({ selected }) {
             rows={paying}
             defaultDate={sharedDate(paying)}
             dateWindow={dateWindow}
-            busy={busy}
+            busy={locked}
             onCancel={() => setPaying(null)}
-            onConfirm={({ date, note }) => pay(paying, () => date, note)}
+            onConfirm={({ date, note }) => pay(paying, () => date, note, date)}
           />
         )}
         {reverting && (
-          <RevertSheet row={reverting} busy={busy} onCancel={() => setReverting(null)} onConfirm={() => revert(reverting)} />
+          <RevertSheet row={reverting} busy={locked} onCancel={() => setReverting(null)} onConfirm={() => revert(reverting)} />
         )}
 
         <section className="flex flex-col gap-4">

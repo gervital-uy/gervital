@@ -1,9 +1,17 @@
-import { canCollect, revertBlock, paymentDateWindow, paymentDateError, registerPayments, revertPayment } from './collect'
+import {
+  canCollect, revertBlock, paymentDateWindow, paymentDateError, registerPayments, revertPayment,
+  STALE_PAID, STALE_INVOICED, STALE_NOT_PAID
+} from './collect'
 import { markMonthPaid, unmarkMonthPaid } from '../invoices/invoiceService'
 import { collectPromo, uncollectPromo } from '../promotions/promotionService'
+import { getMonthPaymentStates } from './queries'
 
 jest.mock('../invoices/invoiceService', () => ({ markMonthPaid: jest.fn(), unmarkMonthPaid: jest.fn() }))
 jest.mock('../promotions/promotionService', () => ({ collectPromo: jest.fn(), uncollectPromo: jest.fn() }))
+jest.mock('./queries', () => ({ getMonthPaymentStates: jest.fn() }))
+
+// Estado real en la base: por defecto, como lo muestra el padrón.
+const live = (entries) => new Map(entries.map(([id, payment_status, extra = {}]) => [id, { client_id: id, payment_status, invoice_status: 'pending', promo_id: null, ...extra }]))
 
 const SUPER = { canManagePromos: true }
 const ADMIN = { canManagePromos: false }
@@ -45,13 +53,21 @@ describe('fecha del giro', () => {
     expect(paymentDateError('2026-08-31', w)).toMatch(/fuera del rango/)
     expect(paymentDateError('2026-10-31', w)).toMatch(/fuera del rango/)
     expect(paymentDateError('2026-10-05', w)).toBeNull()
+    // Los bordes valen
+    expect(paymentDateError(w.min, w)).toBeNull()
+    expect(paymentDateError(w.max, w)).toBeNull()
   })
 })
 
 describe('registrar y revertir', () => {
   beforeEach(() => {
-    markMonthPaid.mockResolvedValue({ success: true })
-    collectPromo.mockResolvedValue({ success: true })
+    markMonthPaid.mockReset().mockResolvedValue({ success: true })
+    collectPromo.mockReset().mockResolvedValue({ success: true })
+    unmarkMonthPaid.mockReset().mockResolvedValue()
+    uncollectPromo.mockReset().mockResolvedValue({ success: true })
+    getMonthPaymentStates.mockReset().mockResolvedValue(live([
+      ['a', 'pending'], ['z', 'pending'], ['b', 'pending', { promo_id: 'p1' }]
+    ]))
   })
 
   test('cada fila va por su función: el mes común sin monto, el ancla cobra el paquete', async () => {
@@ -69,11 +85,34 @@ describe('registrar y revertir', () => {
     expect(markMonthPaid).toHaveBeenLastCalledWith('z', 2026, 9, null, null, null, '2026-10-03')
   })
 
-  test('revertir el ancla deshace el paquete; un mes común se deshace solo', async () => {
+  test('no pisa un cobro registrado desde otro lado mientras la pantalla estaba abierta', async () => {
+    getMonthPaymentStates.mockResolvedValue(live([['a', 'paid'], ['z', 'pending'], ['b', 'pending', { promo_id: 'otra' }]]))
+    const results = await registerPayments([cuota, { ...cuota, id: 'z' }, ancla, { ...cuota, id: 'sinmes' }], { year: 2026, month: 9, dateFor: () => '2026-10-03' })
+    expect(getMonthPaymentStates).toHaveBeenCalledWith(2026, 9, ['a', 'z', 'b', 'sinmes'])
+    expect(results).toEqual([
+      { id: 'a', ok: false, error: STALE_PAID },
+      { id: 'z', ok: true },
+      { id: 'b', ok: false, error: expect.stringMatching(/promo de este mes cambió/) },
+      { id: 'sinmes', ok: false, error: expect.stringMatching(/no está generado/) }
+    ])
+    expect(markMonthPaid).toHaveBeenCalledTimes(1)
+    expect(collectPromo).not.toHaveBeenCalled()
+  })
+
+  test('revertir el ancla deshace el paquete; un mes común se relee y se deshace solo', async () => {
     await revertPayment({ ...ancla, paymentStatus: 'paid' }, { year: 2026, month: 9 })
     expect(uncollectPromo).toHaveBeenCalledWith('p1')
     expect(unmarkMonthPaid).not.toHaveBeenCalled()
+    getMonthPaymentStates.mockResolvedValue(live([['a', 'paid']]))
     await revertPayment({ ...cuota, paymentStatus: 'paid' }, { year: 2026, month: 9 })
     expect(unmarkMonthPaid).toHaveBeenCalledWith('a', 2026, 9)
+  })
+
+  test('no revierte un mes que se facturó o se revirtió desde otro lado', async () => {
+    getMonthPaymentStates.mockResolvedValue(live([['a', 'paid', { invoice_status: 'invoiced' }]]))
+    await expect(revertPayment({ ...cuota, paymentStatus: 'paid' }, { year: 2026, month: 9 })).rejects.toThrow(STALE_INVOICED)
+    getMonthPaymentStates.mockResolvedValue(live([['a', 'pending']]))
+    await expect(revertPayment({ ...cuota, paymentStatus: 'paid' }, { year: 2026, month: 9 })).rejects.toThrow(STALE_NOT_PAID)
+    expect(unmarkMonthPaid).not.toHaveBeenCalled()
   })
 })
