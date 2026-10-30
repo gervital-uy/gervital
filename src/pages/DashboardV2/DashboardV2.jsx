@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import MonthNavigator from '../../components/ui/MonthNavigator'
 import SectionPlaceholder from './SectionPlaceholder'
+import { MonthDataProvider } from './useMonthData'
 import { PLATFORM_START, currentMonthStart } from './monthWindow'
 
 // Pestañas del dashboard v2, en el orden de la maqueta. Cada una pide su feature y
@@ -94,13 +95,16 @@ export default function DashboardV2() {
         </div>
       </div>
 
-      {!active ? (
-        <p className="text-sm text-gray-500">Tu rol no tiene acceso a ninguna sección del dashboard v2.</p>
-      ) : active.Component ? (
-        <active.Component selected={selected} onSelectMonth={setSelected} />
-      ) : (
-        <SectionPlaceholder cards={active.upcoming} />
-      )}
+      {/* El caché de datos vive acá y no en cada pestaña: cambiar de pestaña no recarga */}
+      <MonthDataProvider>
+        {!active ? (
+          <p className="text-sm text-gray-500">Tu rol no tiene acceso a ninguna sección del dashboard v2.</p>
+        ) : active.Component ? (
+          <active.Component selected={selected} onSelectMonth={setSelected} />
+        ) : (
+          <SectionPlaceholder cards={active.upcoming} />
+        )}
+      </MonthDataProvider>
     </div>
   )
 }
