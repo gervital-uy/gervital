@@ -42,7 +42,7 @@ export default function ExplainModal({ docId, ctx, docs, onClose }) {
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1">Cómo se compone</p>
                 <div className="rounded-xl border border-gray-100 bg-gray-50/60 px-4 py-2">
-                  {doc.rows.map((row, i) => <FormulaRow key={i} {...row} />)}
+                  {(doc.rows || []).map((row, i) => <FormulaRow key={i} {...row} />)}
                   {doc.total && <FormulaRow {...doc.total} strong />}
                 </div>
               </div>

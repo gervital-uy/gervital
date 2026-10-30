@@ -18,6 +18,10 @@ const FOCUSABLE = [
 
 // Hojas abiertas, de abajo hacia arriba: Escape y Tab los atiende solo la última.
 const openStack = []
+// Un solo bloqueo de scroll para todas: lo toma la primera que abre y lo suelta la
+// última que cierra, en cualquier orden (dos hojas que se desmontan juntas
+// liberan al revés de como abrieron).
+let savedOverflow = ''
 
 export default function Sheet({ open, onClose, labelledBy, label, maxWidth = 'sm:max-w-lg', children }) {
   const panelRef = useRef(null)
@@ -30,10 +34,12 @@ export default function Sheet({ open, onClose, labelledBy, label, maxWidth = 'sm
   useEffect(() => {
     if (!open) return
     const token = {}
+    if (openStack.length === 0) {
+      savedOverflow = document.body.style.overflow
+      document.body.style.overflow = 'hidden'
+    }
     openStack.push(token)
     const previousFocus = document.activeElement
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
 
     const panel = panelRef.current
     const focusables = () => Array.from(panel?.querySelectorAll(FOCUSABLE) || [])
@@ -69,7 +75,7 @@ export default function Sheet({ open, onClose, labelledBy, label, maxWidth = 'sm
     return () => {
       document.removeEventListener('keydown', onKeyDown)
       openStack.splice(openStack.indexOf(token), 1)
-      document.body.style.overflow = previousOverflow
+      if (openStack.length === 0) document.body.style.overflow = savedOverflow
       if (previousFocus && document.contains(previousFocus)) previousFocus.focus?.()
     }
   }, [open])

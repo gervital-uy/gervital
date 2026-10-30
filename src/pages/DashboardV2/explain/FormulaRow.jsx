@@ -15,7 +15,8 @@ export default function FormulaRow({ label, value, text, op, info, strong }) {
   return (
     <div className={`flex items-center justify-between gap-3 py-1.5 ${strong ? 'border-t border-gray-200 mt-1 pt-2.5' : ''}`}>
       <span className={`text-[13px] flex items-center gap-1.5 min-w-0 ${tone}`}>
-        <span className="w-3 text-gray-300 text-center shrink-0" aria-hidden="true">{op || ''}</span>
+        {/* Sin aria-hidden: el lector de pantalla tiene que oír "menos" en una fila que resta */}
+        <span className="w-3 text-gray-300 text-center shrink-0">{op || ''}</span>
         <span className="truncate">{label}</span>
       </span>
       <span className={`text-[13px] tabular-nums shrink-0 ${strong ? 'font-semibold text-gray-900' : info ? 'text-gray-400' : 'text-gray-800'}`}>

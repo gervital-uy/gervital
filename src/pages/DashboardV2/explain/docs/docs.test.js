@@ -18,13 +18,16 @@ function sourceFiles(dir) {
   })
 }
 
-// Ids literales: <InfoButton id="x" /> e infoId="x". Los dinámicos ({...}) no se ven.
+// Ids de <InfoButton id=...> e infoId=...: los literales ("x") y los que aparecen
+// entre comillas dentro de una expresión ({cond ? 'a' : 'b'}). Un id que se arma
+// con datos en tiempo de ejecución no se ve: para eso está MISSING_DOC.
 function referencedIds() {
   const ids = new Map()
-  const pattern = /(?:<InfoButton\b[^>]*?\bid|\binfoId)=["']([^"']+)["']/g
+  const pattern = /(?:<InfoButton\b[^>]*?\bid|\binfoId)=(?:["']([^"']+)["']|\{([^}]*)\})/g
   for (const file of sourceFiles(V2_DIR)) {
-    for (const [, id] of fs.readFileSync(file, 'utf8').matchAll(pattern)) {
-      ids.set(id, path.relative(V2_DIR, file))
+    for (const [, literal, expression] of fs.readFileSync(file, 'utf8').matchAll(pattern)) {
+      const found = literal ? [literal] : [...(expression || '').matchAll(/["']([^"']+)["']/g)].map(m => m[1])
+      for (const id of found) ids.set(id, path.relative(V2_DIR, file))
     }
   }
   return ids

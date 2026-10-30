@@ -14,7 +14,7 @@ describe('BreakdownBars', () => {
     const { unmount } = render(<BreakdownBars rows={rows} />)
     expect(labels()).toEqual(['3×', '2×', '1×'])
     unmount()
-    render(<BreakdownBars rows={rows} conservarOrden />)
+    render(<BreakdownBars rows={rows} keepOrder />)
     expect(labels()).toEqual(['1×', '3×', '2×'])
   })
 
@@ -24,9 +24,20 @@ describe('BreakdownBars', () => {
     expect(screen.getByText(/5,5 pp/)).toBeInTheDocument()
   })
 
-  test('sin filas o con todo en cero no se rompe ni muestra NaN', () => {
+  test('con todo en cero las barras miden 0% y no aparece NaN', () => {
     const { container } = render(<BreakdownBars rows={[{ label: 'x', value: 0, color: '#000' }, { label: 'y', value: undefined }]} />)
     expect(container).not.toHaveTextContent('NaN')
     expect(screen.queryByText('y')).not.toBeInTheDocument()
+    // eslint-disable-next-line testing-library/no-node-access, testing-library/no-container
+    const bar = container.querySelector('.bg-gray-100 > div')
+    expect(bar.style.width).toBe('0%')
+  })
+
+  test('sin filas no se rompe', () => {
+    for (const empty of [[], undefined]) {
+      const { container, unmount } = render(<BreakdownBars rows={empty} />)
+      expect(container).not.toHaveTextContent(/./)
+      unmount()
+    }
   })
 })

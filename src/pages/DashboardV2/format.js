@@ -14,14 +14,19 @@ export const MINUS = '−'
 const isNum = v => typeof v === 'number' && Number.isFinite(v)
 
 // month es 0-indexed, como en la base.
-export const monthLabelOf = (year, month) => `${MONTH_FULL[month]} ${year}`
+export const monthLabelOf = (year, month) => (isNum(year) && MONTH_FULL[month] ? `${MONTH_FULL[month]} ${year}` : DASH)
 
-export const plural = (n, singular, pluralForm) => `${n} ${n === 1 ? singular : pluralForm}`
+export const plural = (n, singular, pluralForm) => (isNum(n) ? `${n} ${n === 1 ? singular : pluralForm}` : DASH)
 
-// 12.345 → "12,3"
-export const coma = (v, decimals = 1) => (isNum(v) ? v.toFixed(decimals).replace('.', ',') : DASH)
+// 12.345 → "12,3"; -0.04 → "0,0" (nunca "−0,0"); -1.5 → "−1,5"
+export function formatDecimal(v, decimals = 1) {
+  if (!isNum(v)) return DASH
+  const digits = Math.abs(v).toFixed(decimals)
+  const text = digits.replace('.', ',')
+  return v < 0 && Number(digits) !== 0 ? `${MINUS}${text}` : text
+}
 
-export const pctText = (v, decimals = 1) => (isNum(v) ? `${coma(v, decimals)}%` : DASH)
+export const pctText = (v, decimals = 1) => (isNum(v) ? `${formatDecimal(v, decimals)}%` : DASH)
 
 // Pesos con signo visible: -1234 → "−$ 1.234". Redondea antes de decidir el signo
 // para no mostrar "−$ 0".

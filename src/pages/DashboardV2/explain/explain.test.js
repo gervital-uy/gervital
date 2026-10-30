@@ -65,10 +65,20 @@ describe('ExplainProvider + InfoButton', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  test('una fila sin dato se ve como "—"', () => {
+  test('una fila sin dato se ve como "—", no como $ 0', () => {
     renderWith({ ingresos: 100000, gastos: undefined })
     fireEvent.click(screen.getByRole('button', { name: 'Cómo se calcula' }))
-    expect(screen.getByRole('dialog')).toHaveTextContent(DASH)
+    // La fila es el contenedor de su etiqueta: ahí tiene que estar el '—'
+    // eslint-disable-next-line testing-library/no-node-access
+    const row = screen.getByText('Gastos').closest('div')
+    expect(row).toHaveTextContent(`Gastos${DASH}`)
+    expect(row).not.toHaveTextContent('$')
+  })
+
+  test('una "i" con un id que no existe avisa en vez de no hacer nada', () => {
+    renderWith({ ingresos: 1 }, 'inexistente')
+    fireEvent.click(screen.getByRole('button', { name: 'Cómo se calcula' }))
+    expect(screen.getByRole('dialog', { name: 'Explicación no encontrada' })).toBeInTheDocument()
   })
 
   test('si la explicación se rompe, avisa en vez de no hacer nada', () => {

@@ -34,7 +34,11 @@ rendimiento también se descartan: se calcula en el cliente con lo que ya existe
 - [x] Fase 0 — ruta, topbar, shell con pestañas y placeholders
       (`/dashboard-v2`, feature `dashboard_v2` = superadmin, entrada "v2" con ícono DashboardSpeed
       al lado de Dashboard — label corto porque la topbar del superadmin ya está al límite de ancho)
-- [ ] Fase 1 — infraestructura compartida (explicaciones "i", Sheet, primitivas, useMonthData)
+- [x] Fase 1 — infraestructura compartida (explicaciones "i", Sheet, primitivas, useMonthData)
+      Revisión adversarial (4 lentes): 14 confirmados y corregidos. Contrato de explicaciones en
+      `explain/docs/validate.js` (valor con signo, `info`, subtotales `=`, `check: false`); cada
+      explicación nueva va con su muestra en `docSamples.js`. Quedan para su fase: Switch,
+      Segmented, TipRow, Sparkline, DeltaTag, FinKpi, MetricTabs, MesPicker.
 - [ ] Fase 2 — Gestión CFP solo lectura
 - [ ] Fase 3 — Cobranza con escrituras
 - [ ] B1 — facturación de meses de promo (edge function biller + invoiceAmounts.js)
@@ -117,7 +121,7 @@ src/pages/DashboardV2/
   monthWindow.js             # PLATFORM_START = 2026-06; TODAY se calcula en el componente
   format.js                  # coma, plural, fechas largas/cortas (date-fns es)
   useMonthData.js            # padrón y serie del mes, compartidos entre pestañas
-  ui/      Sheet, StatCard(infoId), FinKpi, DeltaTag, Sparkline, BreakdownBars(conservarOrden/pp),
+  ui/      Sheet, StatCard(infoId), FinKpi, DeltaTag, Sparkline, BreakdownBars(keepOrder/pp),
            MetricTabs(size), Segmented, TipRow, Chip, SectionHeading, Avatar, MesPicker
   explain/ ExplainContext.jsx, InfoButton.jsx, ExplainModal.jsx, FormulaRow.jsx,
            docs/{gestion,finanzas,comercial,asistencia,index}.js
@@ -241,7 +245,7 @@ src/services/dashboardV2/   (cada uno con su *.test.js)
 |---|---|---|---|
 | Motor de asistencia | adapt M | lectura nueva de `client_plans` en bloque, `getAttendanceForDateRange`, `clients_full`, `isInactiveOn` | `get_attendance_stats` legacy no sirve. Hay que descartar faltas en días inactivos y filas sobrantes de faltas deshechas |
 | 4 KPIs | adapt S | motor | Faltas justificadas no cobrables ("licencia"): ¿dentro o fuera del denominador? |
-| Tasa por segmento | adapt S | motor + `cognitive_level` | `conservarOrden`. Tier sin historial |
+| Tasa por segmento | adapt S | motor + `cognitive_level` | `keepOrder`. Tier sin historial |
 | Tendencia mensual | adapt S | motor + TrendLine | Recortar a los meses con datos |
 | Asistencia real vs contratada (semana promedio) | adapt M | motor | La tasa de recupero tiene dos definiciones en la maqueta. No hay feriados |
 | Motivación | adapt M | `client_followup_reports.motivation` (filas crudas de `getLatestMotivations`) | Poca cobertura: hace falta un balde "sin dato". No hay reportes desde el 18-09 |

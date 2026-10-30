@@ -1,4 +1,4 @@
-import { money, coma, pctText, plural, monthLabelOf, formatLongDate, formatShortDate, DASH, MINUS } from './format'
+import { money, formatDecimal, pctText, plural, monthLabelOf, formatLongDate, formatShortDate, DASH, MINUS } from './format'
 
 // Intl es-UY separa el $ de los dígitos con un espacio duro (U+00A0).
 describe('format v2', () => {
@@ -14,13 +14,16 @@ describe('format v2', () => {
 
   test('un dato que falta es "—", nunca $ 0', () => {
     for (const v of [null, undefined, NaN, Infinity, '12']) expect(money(v)).toBe(DASH)
-    expect(coma(undefined)).toBe(DASH)
+    expect(formatDecimal(undefined)).toBe(DASH)
     expect(pctText(null)).toBe(DASH)
   })
 
-  test('coma y porcentaje con coma decimal', () => {
-    expect(coma(12.345)).toBe('12,3')
-    expect(coma(12.345, 2)).toBe('12,35')
+  test('decimales y porcentaje con coma; negativos con el menos tipográfico, nunca "−0,0"', () => {
+    expect(formatDecimal(12.345)).toBe('12,3')
+    expect(formatDecimal(12.345, 2)).toBe('12,35')
+    expect(formatDecimal(-1.5)).toBe(`${MINUS}1,5`)
+    expect(formatDecimal(-0.04)).toBe('0,0')
+    expect(pctText(-2.25, 1)).toBe(`${MINUS}2,3%`)
     expect(pctText(88.7)).toBe('88,7%')
     expect(pctText(90, 0)).toBe('90%')
   })
@@ -29,6 +32,9 @@ describe('format v2', () => {
     expect(plural(1, 'cliente', 'clientes')).toBe('1 cliente')
     expect(plural(0, 'cliente', 'clientes')).toBe('0 clientes')
     expect(monthLabelOf(2026, 9)).toBe('octubre 2026')
+    expect(monthLabelOf(2026, 12)).toBe(DASH)
+    expect(monthLabelOf(undefined, 9)).toBe(DASH)
+    expect(plural(undefined, 'cliente', 'clientes')).toBe(DASH)
   })
 
   test('fechas sin correrse de día por la zona horaria', () => {

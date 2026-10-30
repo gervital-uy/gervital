@@ -8,8 +8,9 @@ const deferred = () => {
   return { promise, resolve, reject }
 }
 
-function Consumer({ loader, selected, label = 'c' }) {
+function Consumer({ loader, selected, label = 'c', renders }) {
   const state = useMonthData('padron', loader, selected)
+  renders?.push(`${selected.month}:${state.status}:${state.data}`)
   return (
     <div data-testid={label}>
       {state.status}
@@ -36,11 +37,13 @@ describe('useMonthData', () => {
   test('con provider, dos pestañas comparten la carga: un solo pedido', async () => {
     const loader = jest.fn(async () => 'x')
     const { rerender } = render(
-      <MonthDataProvider><Consumer loader={loader} selected={{ year: 2026, month: 9 }} label="a" /></MonthDataProvider>
+      <MonthDataProvider><Consumer key="a" loader={loader} selected={{ year: 2026, month: 9 }} label="a" /></MonthDataProvider>
     )
     await flush()
-    // Cambiar de pestaña: la otra se monta y lee del caché sin pasar por loading
-    rerender(<MonthDataProvider><Consumer loader={loader} selected={{ year: 2026, month: 9 }} label="b" /></MonthDataProvider>)
+    // Cambiar de pestaña: la otra se monta (key distinta = instancia nueva) y lee
+    // del caché sin pasar por loading
+    rerender(<MonthDataProvider><Consumer key="b" loader={loader} selected={{ year: 2026, month: 9 }} label="b" /></MonthDataProvider>)
+    expect(screen.queryByTestId('a')).not.toBeInTheDocument()
     expect(screen.getByTestId('b')).toHaveTextContent('ready:x')
     expect(loader).toHaveBeenCalledTimes(1)
   })
@@ -48,12 +51,15 @@ describe('useMonthData', () => {
   test('al cambiar de mes nunca muestra los números del mes anterior', async () => {
     const pending = deferred()
     const loader = jest.fn(({ month }) => (month === 9 ? Promise.resolve('oct') : pending.promise))
-    const { rerender } = render(<Consumer loader={loader} selected={{ year: 2026, month: 9 }} />)
+    const renders = []
+    const { rerender } = render(<Consumer loader={loader} selected={{ year: 2026, month: 9 }} renders={renders} />)
     await flush()
     expect(screen.getByTestId('c')).toHaveTextContent('ready:oct')
 
-    rerender(<Consumer loader={loader} selected={{ year: 2026, month: 8 }} />)
+    rerender(<Consumer loader={loader} selected={{ year: 2026, month: 8 }} renders={renders} />)
     expect(screen.getByTestId('c')).toHaveTextContent(/^loading$/)
+    // Ni siquiera el primer render del mes nuevo (antes del efecto) trae los datos viejos
+    expect(renders.filter(r => r.startsWith('8:') && r.includes('oct'))).toEqual([])
     await act(async () => pending.resolve('sep'))
     expect(screen.getByTestId('c')).toHaveTextContent('ready:sep')
   })
@@ -78,6 +84,28 @@ describe('useMonthData', () => {
     fireEvent.click(screen.getByText('reintentar c'))
     await flush()
     expect(screen.getByTestId('c')).toHaveTextContent('ready:ok')
+    expect(loader).toHaveBeenCalledTimes(2)
+  })
+
+  test('reintentar en un bloque arregla a todos los que muestran el mismo mes', async () => {
+    const loader = jest.fn()
+      .mockRejectedValueOnce(new Error('se cayó'))
+      .mockResolvedValueOnce('ok')
+    const selected = { year: 2026, month: 9 }
+    render(
+      <MonthDataProvider>
+        <Consumer loader={loader} selected={selected} label="cobranza" />
+        <Consumer loader={loader} selected={selected} label="facturacion" />
+      </MonthDataProvider>
+    )
+    await flush()
+    expect(screen.getByTestId('cobranza')).toHaveTextContent('error')
+    expect(screen.getByTestId('facturacion')).toHaveTextContent('error')
+
+    fireEvent.click(screen.getByText('reintentar cobranza'))
+    await flush()
+    expect(screen.getByTestId('cobranza')).toHaveTextContent('ready:ok')
+    expect(screen.getByTestId('facturacion')).toHaveTextContent('ready:ok')
     expect(loader).toHaveBeenCalledTimes(2)
   })
 

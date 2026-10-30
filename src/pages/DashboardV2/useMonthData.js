@@ -24,7 +24,16 @@ export function MonthDataProvider({ children }) {
     setVersion(v => v + 1)
   }, [])
 
-  const value = useMemo(() => ({ entries: entriesRef.current, version, invalidate }), [version, invalidate])
+  // Reintentar un bloque recarga a todos los que muestran esa misma clave y mes.
+  const invalidateEntry = useCallback(cacheKey => {
+    entriesRef.current.delete(cacheKey)
+    setVersion(v => v + 1)
+  }, [])
+
+  const value = useMemo(
+    () => ({ entries: entriesRef.current, version, invalidate, invalidateEntry }),
+    [version, invalidate, invalidateEntry]
+  )
   return <MonthDataContext.Provider value={value}>{children}</MonthDataContext.Provider>
 }
 
@@ -76,10 +85,12 @@ export function useMonthData(key, loader, { year, month }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries, cacheKey, version, nonce])
 
+  const invalidateEntry = shared?.invalidateEntry
   const reload = useCallback(() => {
+    if (invalidateEntry) return invalidateEntry(cacheKey)
     entries.delete(cacheKey)
     setNonce(n => n + 1)
-  }, [entries, cacheKey])
+  }, [invalidateEntry, entries, cacheKey])
 
   // Al cambiar de mes, el estado guardado es del mes anterior hasta que corre el
   // efecto: nunca mostrar esos números con la etiqueta del mes nuevo.

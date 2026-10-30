@@ -71,6 +71,34 @@ describe('Sheet', () => {
     expect(last).toHaveFocus()
   })
 
+  test('dos hojas que se desmontan juntas sueltan el scroll del fondo', () => {
+    document.body.style.overflow = 'auto'
+    const { unmount } = render(
+      <>
+        <Sheet open onClose={() => {}} label="abajo"><button type="button">a</button></Sheet>
+        <Sheet open onClose={() => {}} label="arriba"><button type="button">b</button></Sheet>
+      </>
+    )
+    expect(document.body.style.overflow).toBe('hidden')
+    unmount()
+    expect(document.body.style.overflow).toBe('auto')
+  })
+
+  test('si la de abajo cierra primero, el fondo sigue bloqueado hasta que cierra la otra', () => {
+    document.body.style.overflow = 'auto'
+    const tree = (bottom, top) => (
+      <>
+        <Sheet open={bottom} onClose={() => {}} label="abajo"><button type="button">a</button></Sheet>
+        <Sheet open={top} onClose={() => {}} label="arriba"><button type="button">b</button></Sheet>
+      </>
+    )
+    const { rerender } = render(tree(true, true))
+    rerender(tree(false, true))
+    expect(document.body.style.overflow).toBe('hidden')
+    rerender(tree(false, false))
+    expect(document.body.style.overflow).toBe('auto')
+  })
+
   test('con dos hojas abiertas, Escape cierra solo la de arriba', () => {
     const closeBottom = jest.fn()
     const closeTop = jest.fn()
