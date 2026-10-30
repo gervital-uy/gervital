@@ -1,23 +1,39 @@
 import { useEffect, useMemo, useState } from 'react'
 import Card from '../../../../components/ui/Card'
+import { useAuth } from '../../../../context/AuthContext'
+import { todayStr } from '../../../../utils/date'
 import SectionHeading from '../../ui/SectionHeading'
 import LoadState from '../../ui/LoadState'
 import { ExplainProvider } from '../../explain/ExplainContext'
-import { useMonthData } from '../../useMonthData'
+import { useInvalidateMonthData, useMonthData } from '../../useMonthData'
 import { monthLabelOf, plural } from '../../format'
 import { loadPadron } from '../../../../services/dashboardV2/queries'
 import { collectionTotals, invoicingTotals, sortRows } from '../../../../services/dashboardV2/padron'
+import {
+  canCollect, paymentDateError, paymentDateWindow, registerPayments, revertBlock, revertPayment
+} from '../../../../services/dashboardV2/collect'
 import { normalizeSearch, searchText } from './cfpText'
 import CfpSummary from './CfpSummary'
 import BlockedBanner from './BlockedBanner'
 import CfpToolbar, { STATUS_FILTERS } from './CfpToolbar'
 import CfpTable from './CfpTable'
+import PaymentSheet from './PaymentSheet'
+import RevertSheet from './RevertSheet'
+import ActionOutcome from './ActionOutcome'
 
 const DOMAINS = [{ id: 'collection', label: 'Cobranza' }, { id: 'invoicing', label: 'Facturación' }]
 
-// Gestión CFP, fase 2: cobranza y facturación del mes de solo lectura. El cobro y
-// la emisión siguen en la ficha del cliente hasta las fases 3 y 4.
+const without = (set, ids) => {
+  const next = new Set(set)
+  for (const id of ids) next.delete(id)
+  return next
+}
+
+// Gestión CFP: cobranza (con cobros desde la tabla) y facturación del mes (de solo
+// lectura hasta la fase 4; la emisión sigue en la ficha del cliente).
 export default function CfpSection({ selected }) {
+  const { hasAccess } = useAuth()
+  const invalidate = useInvalidateMonthData()
   const padron = useMonthData('padron', loadPadron, selected)
   const rows = padron.status === 'ready' ? padron.data : null
   const monthLabel = monthLabelOf(selected.year, selected.month)
@@ -30,8 +46,22 @@ export default function CfpSection({ selected }) {
   const [query, setQuery] = useState('')
   const [order, setOrder] = useState('plan')
 
-  // El modo trabadas es del mes en que se pidió: al cambiar de mes se sale.
-  useEffect(() => { setOnlyBlocked(false) }, [selected.year, selected.month])
+  // Cobros: fecha cargada por fila, selección, la hoja abierta y el resultado.
+  const [dates, setDates] = useState({})
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [paying, setPaying] = useState(null)
+  const [reverting, setReverting] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [outcome, setOutcome] = useState(null)
+
+  // El modo trabadas, las fechas cargadas y la selección son del mes en que se
+  // pidieron: al cambiar de mes se limpian.
+  useEffect(() => {
+    setOnlyBlocked(false)
+    setDates({})
+    setSelectedIds(new Set())
+    setOutcome(null)
+  }, [selected.year, selected.month])
 
   const status = STATUS_FILTERS[domain].some(s => s.key === statusByDomain[domain]) ? statusByDomain[domain] : 'pending'
   const totals = useMemo(() => (rows ? { collection: collectionTotals(rows), invoicing: invoicingTotals(rows) } : null), [rows])
@@ -50,8 +80,73 @@ export default function CfpSection({ selected }) {
     }), order, domain)
   }, [rows, domain, status, blockedMode, query, order])
 
-  const changeDomain = id => { setOnlyBlocked(false); setDomain(id) }
-  const changeStatus = key => { setOnlyBlocked(false); setStatusByDomain(s => ({ ...s, [domain]: key })) }
+  // La selección es de lo que se ve: cambiar de panel o de estado la limpia.
+  const changeDomain = id => { setOnlyBlocked(false); setSelectedIds(new Set()); setDomain(id) }
+  const changeStatus = key => { setOnlyBlocked(false); setSelectedIds(new Set()); setStatusByDomain(s => ({ ...s, [domain]: key })) }
+
+  const { year, month } = selected
+  const rules = { canManagePromos: hasAccess('promotions') }
+  const dateWindow = paymentDateWindow(year, month, todayStr())
+  const nameOf = id => {
+    const r = rows?.find(x => x.id === id)
+    return r ? `${r.firstName} ${r.lastName}`.trim() : id
+  }
+  const collectable = rows ? rows.filter(r => canCollect(r, rules)) : []
+  const ready = collectable.filter(r => dates[r.id] && !paymentDateError(dates[r.id], dateWindow))
+
+  const pay = async (toPay, dateFor, note) => {
+    setBusy(true)
+    setOutcome(null)
+    const results = await registerPayments(toPay, { year, month, dateFor, note })
+    const okIds = results.filter(r => r.ok).map(r => r.id)
+    setDates(d => Object.fromEntries(Object.entries(d).filter(([id]) => !okIds.includes(id))))
+    setSelectedIds(s => without(s, okIds))
+    setOutcome({ kind: 'paid', ok: okIds.length, failed: results.filter(r => !r.ok).map(r => ({ name: nameOf(r.id), error: r.error })) })
+    setBusy(false)
+    setPaying(null)
+    if (okIds.length) invalidate('padron')
+  }
+
+  const revert = async row => {
+    setBusy(true)
+    setOutcome(null)
+    try {
+      await revertPayment(row, { year, month })
+      setOutcome({ kind: 'reverted', ok: 1, failed: [], name: nameOf(row.id) })
+      invalidate('padron')
+    } catch (error) {
+      setOutcome({ kind: 'reverted', ok: 0, failed: [{ name: nameOf(row.id), error: error.message }] })
+    }
+    setBusy(false)
+    setReverting(null)
+  }
+
+  const sharedDate = ids => {
+    const loaded = [...new Set(ids.map(r => dates[r.id]).filter(Boolean))]
+    if (loaded.length === 1) return loaded[0]
+    const today = todayStr()
+    return today >= dateWindow.min && today <= dateWindow.max ? today : ''
+  }
+
+  const actions = {
+    busy,
+    dateWindow,
+    dates,
+    ready,
+    hiddenReady: ready.filter(r => !visible.some(v => v.id === r.id)).length,
+    selected: selectedIds,
+    canCollect: r => canCollect(r, rules),
+    revertBlock: r => revertBlock(r, rules),
+    dateError: r => paymentDateError(dates[r.id], dateWindow),
+    onDate: (id, value) => setDates(d => ({ ...d, [id]: value })),
+    onClearDates: () => setDates({}),
+    onToggle: id => setSelectedIds(s => (s.has(id) ? without(s, [id]) : new Set([...s, id]))),
+    onClearSelection: () => setSelectedIds(new Set()),
+    onPayRow: row => pay([row], () => dates[row.id]),
+    onPayReady: () => pay(ready, r => dates[r.id]),
+    onPaySelected: rowsToPay => setPaying(rowsToPay),
+    onRevert: row => setReverting(row)
+  }
 
   const ctx = totals ? { cfp: totals, domain, monthLabel } : null
 
@@ -98,11 +193,26 @@ export default function CfpSection({ selected }) {
                   shown={visible.length}
                   total={rows.length}
                 />
-                <CfpTable domain={domain} rows={visible} year={selected.year} month={selected.month} />
+                {outcome && <ActionOutcome outcome={outcome} refreshing={padron.refreshing} onDismiss={() => setOutcome(null)} />}
+                <CfpTable domain={domain} rows={visible} year={year} month={month} actions={domain === 'collection' ? actions : null} />
               </>
             )}
           </LoadState>
         </section>
+
+        {paying && (
+          <PaymentSheet
+            rows={paying}
+            defaultDate={sharedDate(paying)}
+            dateWindow={dateWindow}
+            busy={busy}
+            onCancel={() => setPaying(null)}
+            onConfirm={({ date, note }) => pay(paying, () => date, note)}
+          />
+        )}
+        {reverting && (
+          <RevertSheet row={reverting} busy={busy} onCancel={() => setReverting(null)} onConfirm={() => revert(reverting)} />
+        )}
 
         <section className="flex flex-col gap-4">
           <SectionHeading

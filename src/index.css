@@ -76,3 +76,32 @@
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
 }
+
+/* Dashboard v2: fecha del giro en la tabla de Cobranza. El disparador nativo del
+   almanaque (invisible) se ubica sobre el ícono de calendario: un clic ahí abre el
+   almanaque y sobre dd/mm/aaaa la fecha se escribe con el teclado. */
+.fecha-pago {
+  position: relative;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: text;
+}
+.fecha-pago::-webkit-calendar-picker-indicator {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 24px;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.fecha-pago::-webkit-inner-spin-button,
+.fecha-pago::-webkit-clear-button {
+  display: none;
+}
+.fecha-pago::-webkit-datetime-edit {
+  padding: 0;
+}

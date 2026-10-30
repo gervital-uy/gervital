@@ -39,6 +39,7 @@ const breakdown = panel.map(p => ({ clientId: p.client_id, frequency: 3, schedul
 const ROWS = buildPadron({ panel, clients, breakdown, promotions: [{ id: 'p1', paid_date: '2026-10-05' }] }, { year: 2026, month: 9, today: '2026-10-30' })
 
 jest.mock('../../../../services/dashboardV2/queries', () => ({ loadPadron: jest.fn() }))
+jest.mock('../../../../context/AuthContext', () => ({ useAuth: () => ({ hasAccess: () => true }) }))
 const { loadPadron } = jest.requireMock('../../../../services/dashboardV2/queries')
 
 const renderSection = () => render(
@@ -52,7 +53,7 @@ const renderSection = () => render(
 const tableNames = () => within(screen.getByRole('table')).queryAllByRole('link').map(a => a.textContent)
 const rowOf = name => screen.getByRole('row', { name: new RegExp(name) })
 
-describe('Gestión CFP (solo lectura)', () => {
+describe('Gestión CFP: vistas', () => {
   beforeEach(() => loadPadron.mockReset().mockResolvedValue(ROWS))
 
   test('KPIs de cobranza sobre el padrón entero y la tabla arranca en Pendientes', async () => {
