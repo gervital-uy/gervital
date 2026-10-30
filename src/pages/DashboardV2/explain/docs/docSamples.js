@@ -23,11 +23,13 @@ const breakdown = panel.map(p => ({ clientId: p.client_id, frequency: 3, schedul
 const rows = buildPadron({ panel, clients, breakdown }, { year: 2026, month: 9, today: '2026-10-30' })
 const cfp = { collection: collectionTotals(rows), invoicing: invoicingTotals(rows) }
 const base = { cfp, monthLabel: 'octubre 2026' }
+// Una fila con el emitido distinto del servicio (el ancla facturada por el paquete)
+// hace que la fila de "monto distinto" de la explicación no sea un cero.
 
 export const DOC_SAMPLES = {
   cfp: {
-    full: [{ ...base, domain: 'cobranza' }, { ...base, domain: 'facturacion' }],
-    partial: { domain: 'facturacion', monthLabel: 'octubre 2026' }
+    full: [{ ...base, domain: 'collection' }, { ...base, domain: 'invoicing' }],
+    partial: { domain: 'invoicing', monthLabel: 'octubre 2026' }
   },
-  ivaMes: { full: base, partial: { cfp: { invoicing: {} } } }
+  monthVat: { full: base, partial: { cfp: { invoicing: {} } } }
 }

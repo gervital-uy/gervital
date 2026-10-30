@@ -7,8 +7,8 @@ import { buildPadron, monthEvents, needsProration } from './padron'
 // Lecturas del dashboard v2. Todo sale de lo que ya existe en la base: la v2 no
 // agrega funciones, vistas ni tablas. month es 0-indexed.
 
-const CLIENT_FIELDS = 'id, firstName, lastName, avatarUrl, documentNumber, email, address, plan, transferResponsible, startDate, deactivationDate'
-const INVOICE_FIELDS = 'clientId, discountPercent, emitError, dgiStatus, correctionPending, isAmountOverridden, paymentNotes'
+const CLIENT_FIELDS = 'id, firstName, lastName, avatarUrl, documentNumber, email, address, plan, transferResponsible, startDate, deactivationDate, inactivityPeriods'
+const INVOICE_FIELDS = 'clientId, discountPercent, emitError, dgiStatus, correctionPending, isAmountOverridden, paymentNotes, attendanceChargeableGross, transportChargeableGross'
 
 const unwrap = ({ data, error }) => {
   if (error) throw new Error(error.message)
@@ -16,7 +16,8 @@ const unwrap = ({ data, error }) => {
 }
 
 // Las cinco lecturas del padrón del mes, en paralelo, más los días prorrateados de
-// las altas y bajas del mes (pocas filas: una llamada a calculate_month_billing cada una).
+// las altas, bajas y reingresos del mes (pocas filas: una llamada a
+// calculate_month_billing cada una).
 export async function getPadronSources(year, month) {
   const [panel, clients, breakdown, invoices] = await Promise.all([
     supabase.rpc('get_month_collection_panel', { p_year: year, p_month: month }).then(unwrap),

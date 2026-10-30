@@ -1,10 +1,13 @@
 import { promoMonthCollection } from '../promotions/promotionsView'
 import { billableTotal, prorateInvoiceLines } from '../invoices/invoiceAmounts'
+import { PLATFORM_START_ISO } from './platform'
 
 // Padrón del mes de Gestión CFP: una fila por cliente que se cobra en el mes (la
 // población de get_month_collection_panel) con todo lo que la pantalla deriva: qué
 // se cobra, qué se factura, el IVA, el estado y lo que frena una factura. Lógica
 // pura; las lecturas están en queries.js. month es 0-indexed.
+//
+// Paneles: 'collection' (cobranza) e 'invoicing' (facturación).
 
 // Vencimiento: igual que la ficha del cliente (ClientDetail), un mes sin cobrar
 // está vencido pasado el día 11.
@@ -12,6 +15,7 @@ export const OVERDUE_AFTER_DAY = 11
 
 const num = v => (v == null || v === '' ? 0 : Number(v) || 0)
 const pad = n => String(n).padStart(2, '0')
+const isoDay = iso => (iso ? String(iso).slice(0, 10) : null)
 const dayOf = iso => Number(String(iso).slice(8, 10))
 
 export function monthBounds(year, month) {
@@ -19,20 +23,32 @@ export function monthBounds(year, month) {
   return { first: `${year}-${pad(month + 1)}-01`, last: `${year}-${pad(month + 1)}-${pad(lastDay)}` }
 }
 
-// Alta o baja dentro del mes, como día del mes (o null). La baja es la
-// deactivation_date: se cobra hasta el día anterior.
+// Lo que pasa con el cliente dentro del mes, como día del mes (o null):
+//   · startDay: alta. Los heredados (cargados con la fecha de lanzamiento) no son alta.
+//   · leaveDay / returnDay: empieza o termina un período de inactividad [desde, hasta).
+//     Los períodos son la fuente de verdad (un reingreso borra deactivation_date);
+//     deactivationDate solo se usa si la ficha no trae los períodos.
+//   · inactive: algún período toca el mes, así que la cuota puede ser parcial.
 export function monthEvents(client, year, month) {
   const { first, last } = monthBounds(year, month)
-  const inMonth = iso => !!iso && iso.slice(0, 10) >= first && iso.slice(0, 10) <= last
+  const inMonth = iso => !!iso && isoDay(iso) >= first && isoDay(iso) <= last
+  const periods = Array.isArray(client?.inactivityPeriods)
+    ? client.inactivityPeriods
+    : client?.deactivationDate ? [{ fromDate: client.deactivationDate, toDate: null }] : []
+  const leave = periods.find(p => inMonth(p.fromDate))
+  const back = periods.find(p => inMonth(p.toDate))
+  const start = isoDay(client?.startDate)
   return {
-    startDay: inMonth(client?.startDate) ? dayOf(client.startDate) : null,
-    leaveDay: inMonth(client?.deactivationDate) ? dayOf(client.deactivationDate) : null
+    startDay: inMonth(start) && start !== PLATFORM_START_ISO ? dayOf(start) : null,
+    leaveDay: leave ? dayOf(leave.fromDate) : null,
+    returnDay: back ? dayOf(back.toDate) : null,
+    inactive: periods.some(p => isoDay(p.fromDate) <= last && (!p.toDate || isoDay(p.toDate) > first))
   }
 }
 
-// Las filas con cuota proporcional (alta empezado el mes o baja): las únicas para
-// las que hace falta pedir los días a calculate_month_billing.
-export const needsProration = ({ startDay, leaveDay }) => (startDay != null && startDay > 1) || leaveDay != null
+// Las filas que pueden tener cuota proporcional: las únicas para las que hace falta
+// pedirle los días a calculate_month_billing.
+export const needsProration = ({ startDay, inactive }) => (startDay != null && startDay > 1) || !!inactive
 
 export function isPastDue(year, month, today) {
   return !!today && today > `${year}-${pad(month + 1)}-${pad(OVERDUE_AFTER_DAY)}`
@@ -54,9 +70,9 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i
 export function blockOf(row) {
   if (row.invoiceStatus === 'invoiced') return null
   if (!row.documentNumber) {
-    return { chip: 'falta CI', family: 'ficha', detail: 'Falta la cédula en la ficha del cliente: Biller no emite sin documento' }
+    return { chip: 'falta CI', family: 'record', detail: 'Falta la cédula en la ficha del cliente: Biller no emite sin documento' }
   }
-  if (row.emitError) return { chip: 'error Biller', family: 'facturador', detail: row.emitError }
+  if (row.emitError) return { chip: 'error Biller', family: 'biller', detail: row.emitError }
   return null
 }
 
@@ -68,6 +84,12 @@ export function receiverWarnings(row) {
   if (!row.street) out.push('sin dirección')
   return out
 }
+
+// El monto que muestra cada panel (y por el que se ordena): lo que la fila aporta a
+// la cobranza, o lo facturado / a facturar.
+export const rowAmount = (r, domain) => (domain === 'collection'
+  ? r.expected
+  : r.invoiceStatus === 'invoiced' ? r.invoicedAmount : r.billable)
 
 function derive(row, pastDue) {
   const isPromo = row.promoIndex != null
@@ -91,43 +113,30 @@ function derive(row, pastDue) {
       liveTransGross: row.transportGross,
       hasTransport: row.hasTransport
     })
-  const invoicedLines = row.invoiceStatus === 'invoiced'
-    ? prorateInvoiceLines({
-      paymentStatus: 'paid',
-      paidAmount: row.invoicedAmount,
-      liveAttGross: row.attendanceGross,
-      liveTransGross: row.transportGross,
-      hasTransport: row.hasTransport
-    })
-    : null
   const block = blockOf(row)
-
-  const collectionBucket = isCollected ? 'hechas'
-    : due > 0 || (isPromo && row.promoIndex > 1) ? 'pendientes'
-    : 'hechas'
-  const invoiceBucket = row.invoiceStatus === 'invoiced' || billable <= 0 ? 'emitidas'
-    : !isCollected ? 'nocobrado'
-    : 'pendientes'
+  const awaitingPackage = isPromo && row.promoIndex > 1 && row.paymentStatus === 'pending'
 
   return {
     ...row,
     due,
     expected,
     isCollected,
+    awaitingPackage,
     billable,
     iva: ivaOf(lines),
-    invoicedIva: invoicedLines ? ivaOf(invoicedLines) : 0,
+    // Lo emitido, con las líneas tal como salieron (guardadas al emitir).
+    invoicedIva: row.invoiceStatus === 'invoiced' ? ivaOf(row.invoicedLines) : 0,
     isOverdue: row.paymentStatus === 'pending' && due > 0 && pastDue,
     block,
     warnings: receiverWarnings(row),
     // Lo emitido no coincide con lo que corresponde facturar (p. ej. un mes ancla
     // facturado por el paquete entero). Se muestra, no se corrige: lo define el contador.
     invoiceMismatch: row.invoiceStatus === 'invoiced' && Math.abs(row.invoicedAmount - billable) > 1,
-    // Se puede emitir ya: cobrado, sin factura, con monto y sin datos faltantes en la
-    // ficha. Un rechazo de Biller sí se puede reintentar.
-    canEmit: isCollected && row.invoiceStatus !== 'invoiced' && billable > 0 && block?.family !== 'ficha',
-    collectionBucket,
-    invoiceBucket
+    // Se puede emitir: cobrado, sin factura, con monto y sin datos faltantes en la
+    // ficha. Un rechazo de Biller se puede reintentar.
+    canEmit: isCollected && row.invoiceStatus !== 'invoiced' && billable > 0 && block?.family !== 'record',
+    collectionBucket: isCollected ? 'done' : due > 0 || awaitingPackage ? 'pending' : 'done',
+    invoiceBucket: row.invoiceStatus === 'invoiced' || billable <= 0 ? 'issued' : !isCollected ? 'uncollected' : 'pending'
   }
 }
 
@@ -148,8 +157,12 @@ export function buildPadron({ panel, clients, breakdown, invoices, promotions, b
     const attendanceGross = num(p.attendance_gross)
     const transportGross = num(p.transport_gross)
     const events = monthEvents(client, year, month)
+    const frequency = plan.frequency ?? client.plan?.frequency ?? null
     const days = billing[p.client_id]
     const invoiced = p.invoice_status === 'invoiced'
+    const invoicedAmount = invoiced ? num(p.invoiced_amount) : 0
+    const snapshotAtt = num(invoice.attendanceChargeableGross)
+    const snapshotTrans = num(invoice.transportChargeableGross)
 
     return derive({
       id: p.client_id,
@@ -162,9 +175,10 @@ export function buildPadron({ panel, clients, breakdown, invoices, promotions, b
       distanceRange: client.address?.distanceRange || null,
       transferResponsible: client.transferResponsible || null,
       // El plan del mes (versionado), no el de hoy.
-      frequency: plan.frequency ?? client.plan?.frequency ?? null,
+      frequency,
       schedule: plan.schedule ?? client.plan?.schedule ?? null,
-      hasTransport: plan.hasTransport ?? transportGross > 0,
+      // Si el mes cobra transporte, tiene transporte aunque el desglose no traiga plan.
+      hasTransport: transportGross > 0 || !!plan.hasTransport,
       attendanceGross,
       transportGross,
       amount: attendanceGross + transportGross,
@@ -175,7 +189,12 @@ export function buildPadron({ panel, clients, breakdown, invoices, promotions, b
       invoiceStatus: p.invoice_status || 'pending',
       invoiceNumber: p.invoice_number || null,
       invoiceDate: p.invoice_date || null,
-      invoicedAmount: invoiced ? num(p.invoiced_amount) : 0,
+      invoicedAmount,
+      // Las líneas guardadas al emitir; si faltan, lo emitido repartido como hoy.
+      invoicedLines: !invoiced ? null
+        : snapshotAtt + snapshotTrans > 0
+          ? { attGross: snapshotAtt, transGross: snapshotTrans }
+          : prorateInvoiceLines({ paymentStatus: 'paid', paidAmount: invoicedAmount, liveAttGross: attendanceGross, liveTransGross: transportGross, hasTransport: transportGross > 0 }),
       emitError: invoice.emitError || null,
       dgiStatus: invoice.dgiStatus || null,
       discountPercent: p.promo_id ? null : (num(invoice.discountPercent) || null),
@@ -189,7 +208,12 @@ export function buildPadron({ panel, clients, breakdown, invoices, promotions, b
       isAmountOverridden: !!invoice.isAmountOverridden,
       startDay: events.startDay,
       leaveDay: events.leaveDay,
-      proration: days && days.plannedDays < days.fullMonthDays ? { days: days.plannedDays, of: days.fullMonthDays } : null
+      returnDay: events.returnDay,
+      // Días que cobra calculate_month_billing: los cobrables, con tope en el mes
+      // pactado (4 × frecuencia), sobre ese mes pactado.
+      proration: days?.isProrated && frequency
+        ? { days: Math.min(num(days.chargeableDays), 4 * frequency), of: 4 * frequency }
+        : null
     }, pastDue)
   })
 }
@@ -198,81 +222,86 @@ const sum = (rows, f) => rows.reduce((s, r) => s + f(r), 0)
 
 // KPIs de Cobranza, siempre sobre el padrón entero (no sobre el filtro).
 export function collectionTotals(rows) {
-  const previsto = sum(rows, r => r.expected)
-  const cobrado = sum(rows.filter(r => r.paymentStatus === 'paid'), r => num(r.paidAmount))
-  const porCobrar = rows.filter(r => r.paymentStatus === 'pending' && r.due > 0)
+  const expected = sum(rows, r => r.expected)
+  const collected = sum(rows.filter(r => r.paymentStatus === 'paid'), r => num(r.paidAmount))
+  const due = rows.filter(r => r.paymentStatus === 'pending' && r.due > 0)
   const anchors = rows.filter(r => r.promoIndex === 1)
+  const covered = rows.filter(r => r.paymentStatus === 'prepaid')
   return {
-    clientes: rows.length,
-    previsto,
-    cobrado,
-    pendiente: previsto - cobrado,
-    pctCobro: previsto > 0 ? (cobrado / previsto) * 100 : null,
-    pctPendiente: previsto > 0 ? ((previsto - cobrado) / previsto) * 100 : null,
-    pendientes: porCobrar.length,
-    vencidos: porCobrar.filter(r => r.isOverdue).length,
-    alDia: rows.length - porCobrar.length,
+    clients: rows.length,
+    expected,
+    collected,
+    outstanding: expected - collected,
+    collectedPct: expected > 0 ? (collected / expected) * 100 : null,
+    outstandingPct: expected > 0 ? ((expected - collected) / expected) * 100 : null,
+    dueCount: due.length,
+    overdueCount: due.filter(r => r.isOverdue).length,
+    upToDate: rows.filter(r => r.collectionBucket === 'done').length,
     // Lo que aporta cada paquete al previsto (lo cobrado si ya entró), para que
     // cuotas + paquetes = previsto cierre exacto.
-    paquetes: sum(anchors, r => r.expected),
-    paquetesCount: anchors.length,
-    previstoCuotas: sum(rows.filter(r => r.promoIndex == null), r => r.expected),
-    prepagasNominal: sum(rows.filter(r => r.promoIndex > 1), r => r.amount),
-    prepagasCount: rows.filter(r => r.promoIndex > 1).length
+    packages: sum(anchors, r => r.expected),
+    packageCount: anchors.length,
+    monthlyExpected: sum(rows.filter(r => r.promoIndex == null), r => r.expected),
+    coveredNominal: sum(covered, r => r.amount),
+    coveredCount: covered.length,
+    awaitingPackage: rows.filter(r => r.awaitingPackage).length
   }
 }
 
 // KPIs de Facturación, sobre el padrón entero.
 export function invoicingTotals(rows) {
-  const pendingRows = rows.filter(r => r.invoiceStatus !== 'invoiced' && r.billable > 0)
+  const notIssued = rows.filter(r => r.invoiceStatus !== 'invoiced' && r.billable > 0)
+  const collected = notIssued.filter(r => r.isCollected)
   const blocked = rows.filter(r => r.block)
   const reasons = new Map()
   for (const r of blocked) reasons.set(r.block.chip, (reasons.get(r.block.chip) || 0) + 1)
   const invoiced = rows.filter(r => r.invoiceStatus === 'invoiced')
-  const ivaEmitido = sum(invoiced, r => r.invoicedIva)
-  const ivaFaltante = sum(pendingRows, r => r.iva)
+  const issuedVat = sum(invoiced, r => r.invoicedIva)
+  const pendingVat = sum(notIssued, r => r.iva)
   return {
-    clientes: rows.length,
-    facturableCuotas: sum(rows.filter(r => r.promoIndex == null), r => r.billable),
-    facturablePromos: sum(rows.filter(r => r.promoIndex != null), r => r.billable),
-    facturableTotal: sum(rows, r => r.billable),
-    promoMeses: rows.filter(r => r.promoIndex != null).length,
-    facturado: sum(invoiced, r => r.invoicedAmount),
-    emitidas: invoiced.length,
+    clients: rows.length,
+    monthlyBillable: sum(rows.filter(r => r.promoIndex == null), r => r.billable),
+    promoBillable: sum(rows.filter(r => r.promoIndex != null), r => r.billable),
+    billable: sum(rows, r => r.billable),
+    promoMonths: rows.filter(r => r.promoIndex != null).length,
+    issued: sum(invoiced, r => r.invoicedAmount),
+    issuedCount: invoiced.length,
     // Lo que falta emitir por servicio del mes, y lo ya emitido que no coincide con
-    // ese servicio: A facturar − emitido + emitidoDistinto = faltaEmitir.
-    faltaEmitir: sum(pendingRows, r => r.billable),
-    emitidoDistinto: sum(invoiced, r => r.invoicedAmount - r.billable),
+    // ese servicio: a facturar − emitido + issuedMismatch = toIssue.
+    toIssue: sum(notIssued, r => r.billable),
+    issuedMismatch: sum(invoiced, r => r.invoicedAmount - r.billable),
+    mismatchCount: invoiced.filter(r => r.invoiceMismatch).length,
     // IVA de ventas del mes: el de las facturas tal como se emitieron más el de lo
     // que falta emitir.
-    ivaDelMes: ivaEmitido + ivaFaltante,
-    ivaEmitido,
-    ivaFaltante,
-    sinEmitir: pendingRows.length,
-    listas: pendingRows.filter(r => r.canEmit).length,
-    esperandoCobro: pendingRows.filter(r => !r.isCollected).length,
-    trabadasFicha: blocked.filter(r => r.block.family === 'ficha').length,
-    trabadasFacturador: blocked.filter(r => r.block.family === 'facturador').length,
-    trabadasConCobro: blocked.filter(r => r.isCollected).length,
-    trabadasSinCobro: blocked.filter(r => !r.isCollected).length,
-    detalleTrabadas: [...reasons].map(([chip, n]) => `${n} ${chip}`),
-    conAvisos: pendingRows.filter(r => r.warnings.length > 0).length,
-    distintas: invoiced.filter(r => r.invoiceMismatch).length
+    vat: issuedVat + pendingVat,
+    issuedVat,
+    pendingVat,
+    // Las que faltan emitir, en cuatro grupos que no se pisan.
+    notIssued: notIssued.length,
+    awaitingPayment: notIssued.filter(r => !r.isCollected).length,
+    ready: collected.filter(r => !r.block).length,
+    missingRecordData: collected.filter(r => r.block?.family === 'record').length,
+    rejected: collected.filter(r => r.block?.family === 'biller').length,
+    // Trabadas (todas, cobradas o no), para el aviso.
+    blockedRecord: blocked.filter(r => r.block.family === 'record').length,
+    blockedBiller: blocked.filter(r => r.block.family === 'biller').length,
+    blockedCollected: blocked.filter(r => r.isCollected).length,
+    blockedUncollected: blocked.filter(r => !r.isCollected).length,
+    blockedReasons: [...reasons].map(([chip, n]) => `${n} ${chip}`),
+    withWarnings: notIssued.filter(r => r.warnings.length > 0).length
   }
 }
 
 // Orden por defecto ("Plan y promos"): primero las cuotas del mes, de mayor a menor
 // frecuencia; después las promos (el paquete antes que los meses cubiertos); al
-// final los descuentos puntuales. Empates por monto.
+// final los descuentos puntuales. Empates por el monto que se ve.
 const rank = r => (r.promoIndex != null ? 1 : r.discountPercent ? 2 : 0)
-const amountFor = domain => r => (domain === 'cobranza' ? r.due : r.billable)
 
 export function sortRows(rows, order, domain) {
-  const amount = amountFor(domain)
-  const byAmount = (a, b) => amount(b) - amount(a)
-  const compare = order === 'nombre'
+  const byAmount = (a, b) => rowAmount(b, domain) - rowAmount(a, domain)
+  const compare = order === 'name'
     ? (a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`, 'es')
-    : order === 'monto'
+    : order === 'amount'
       ? byAmount
       : (a, b) => (rank(a) - rank(b))
         || ((a.promoIndex === 1 ? 0 : 1) - (b.promoIndex === 1 ? 0 : 1))
@@ -281,11 +310,11 @@ export function sortRows(rows, order, domain) {
   return [...rows].sort(compare)
 }
 
-// Ventana razonable para la fecha de un giro: del 1 del mes anterior al último del
-// siguiente. Antes del mes de servicio es "anticipado", después "atrasado".
+// Fecha de un giro respecto del mes de servicio: antes es "anticipado", después
+// "atrasado".
 export function paymentOffset(iso, year, month) {
   if (!iso) return null
   const { first, last } = monthBounds(year, month)
-  const day = iso.slice(0, 10)
+  const day = isoDay(iso)
   return day < first ? 'anticipado' : day > last ? 'atrasado' : null
 }

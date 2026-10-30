@@ -1,17 +1,17 @@
 import Card from '../../../../components/ui/Card'
 
 export const STATUS_FILTERS = {
-  cobranza: [
-    { key: 'pendientes', label: 'Pendientes' },
-    { key: 'hechas', label: 'Cobrados' },
-    { key: 'todos', label: 'Todos' }
+  collection: [
+    { key: 'pending', label: 'Pendientes' },
+    { key: 'done', label: 'Cobrados' },
+    { key: 'all', label: 'Todos' }
   ],
   // En el orden del circuito: lo que todavía no se puede facturar, lo listo, lo hecho.
-  facturacion: [
-    { key: 'nocobrado', label: 'No cobrado' },
-    { key: 'pendientes', label: 'Pendientes' },
-    { key: 'emitidas', label: 'Emitidas' },
-    { key: 'todos', label: 'Todos' }
+  invoicing: [
+    { key: 'uncollected', label: 'No cobrado' },
+    { key: 'pending', label: 'Pendientes' },
+    { key: 'issued', label: 'Emitidas' },
+    { key: 'all', label: 'Todos' }
   ]
 }
 
@@ -21,16 +21,16 @@ export default function CfpToolbar({ domain, status, onStatus, query, onQuery, o
   return (
     <Card className="rounded-2xl border-gray-100 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3">
-        <div className="flex flex-col gap-1.5 items-center">
+        <div className="flex flex-col gap-1.5 items-center max-w-full">
           <span className={LABEL} id="cfp-status-label">Estado</span>
-          <div className="inline-flex bg-gray-100 rounded-full p-0.5" role="group" aria-labelledby="cfp-status-label">
+          <div className="inline-flex flex-wrap justify-center bg-gray-100 rounded-2xl p-0.5" role="group" aria-labelledby="cfp-status-label">
             {STATUS_FILTERS[domain].map(s => (
               <button
                 key={s.key}
                 type="button"
                 onClick={() => onStatus(s.key)}
                 aria-pressed={status === s.key}
-                className={`text-xs font-semibold px-3 py-1.5 rounded-full transition-colors whitespace-nowrap ${
+                className={`text-xs font-semibold px-2.5 sm:px-3 py-1.5 rounded-full transition-colors whitespace-nowrap ${
                   status === s.key ? 'bg-white text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
@@ -80,8 +80,8 @@ export default function CfpToolbar({ domain, status, onStatus, query, onQuery, o
             className="text-[13px] text-gray-500 rounded-xl border border-gray-200 bg-white px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
           >
             <option value="plan">Plan y promos</option>
-            <option value="monto">Mayor monto</option>
-            <option value="nombre">Apellido</option>
+            <option value="amount">Mayor monto</option>
+            <option value="name">Apellido</option>
           </select>
         </div>
 

@@ -1,9 +1,11 @@
 import { startOfMonth } from 'date-fns'
+import { parseDateOnly } from '../../utils/date'
+import { PLATFORM_START_ISO } from '../../services/dashboardV2/platform'
 
-// La plataforma empezó a funcionar en junio de 2026: antes no hay asistencia, ni
-// cobranza, ni costos cargados. La ventana del dashboard v2 arranca ahí y crece sola
-// con cada mes que pasa (legacy usa 24 meses fijos, la mayoría vacíos).
-export const PLATFORM_START = new Date(2026, 5, 1)
+// La ventana del dashboard v2 arranca cuando empezó la plataforma (antes no hay
+// datos) y crece sola con cada mes que pasa (legacy usa 24 meses fijos, la mayoría
+// vacíos).
+export const PLATFORM_START = parseDateOnly(PLATFORM_START_ISO)
 
 // Se calcula al montar y no al cargar el módulo: una pestaña abierta de un mes para
 // el otro tiene que poder llegar al mes nuevo.

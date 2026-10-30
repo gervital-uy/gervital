@@ -3,20 +3,20 @@ import Card from '../../../../components/ui/Card'
 import Avatar from '../../ui/Avatar'
 import Chip from '../../ui/Chip'
 import { DASH, formatShortDate, money } from '../../format'
-import { paymentOffset } from '../../../../services/dashboardV2/padron'
+import { paymentOffset, rowAmount } from '../../../../services/dashboardV2/padron'
 import {
-  benefitOf, collectionChips, collectionDetail, conceptOf, holderOf, invoiceChips, invoiceDetail, rowAmount
+  benefitOf, collectionChips, collectionDetail, conceptOf, holderOf, invoiceChips, invoiceDetail, isStruck
 } from './cfpText'
 
 const COLUMNS = {
-  cobranza: [
+  collection: [
     { label: 'Cliente', width: '27%', cls: 'px-4' },
     { label: 'Estado', width: '14%', cls: 'px-2' },
     { label: 'Detalle de transferencia', width: '32%', cls: 'px-2' },
     { label: 'Monto', width: '12%', cls: 'px-3 text-right tracking-normal' },
     { label: 'Fecha de pago', width: '15%', cls: 'px-2 text-center' }
   ],
-  facturacion: [
+  invoicing: [
     { label: 'Cliente', width: '30%', cls: 'px-4' },
     { label: 'Estado', width: '19%', cls: 'px-2' },
     { label: 'Comprobante', width: '36%', cls: 'px-2' },
@@ -49,12 +49,12 @@ function PaidDate({ row, year, month }) {
 // ficha del cliente (el nombre lleva ahí).
 export default function CfpTable({ domain, rows, year, month }) {
   const columns = COLUMNS[domain]
-  const isCollection = domain === 'cobranza'
+  const isCollection = domain === 'collection'
 
   return (
     <Card className="rounded-2xl border-gray-100 shadow-[0_1px_2px_rgba(16,24,40,0.04)] overflow-hidden">
       <div className="overflow-x-auto">
-        <table className={`w-full text-left table-fixed ${isCollection ? 'min-w-[640px]' : 'min-w-[520px]'}`}>
+        <table className={`w-full text-left table-fixed ${isCollection ? 'min-w-[760px]' : 'min-w-[640px]'}`}>
           <colgroup>
             {columns.map(c => <col key={c.label} style={{ width: c.width }} />)}
           </colgroup>
@@ -71,8 +71,7 @@ export default function CfpTable({ domain, rows, year, month }) {
               const chips = isCollection ? collectionChips(r) : invoiceChips(r)
               const benefit = isCollection ? null : benefitOf(r)
               const concept = conceptOf(r)
-              // Un mes cubierto por un paquete no cobra nada: se muestra su valor tachado.
-              const struck = isCollection && r.expected === 0 && r.promoIndex > 1
+              const struck = isStruck(r, domain)
               return (
                 <tr key={r.id} className="text-[13px] transition-colors hover:bg-gray-50/70">
                   <td className="px-4 py-2.5">
@@ -92,8 +91,8 @@ export default function CfpTable({ domain, rows, year, month }) {
                     {isCollection ? (
                       <>
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="truncate text-[13px] text-gray-900 font-medium">{holderOf(r)}</span>
-                          <Chip meta={concept} />
+                          <span className="truncate min-w-[6rem] text-[13px] text-gray-900 font-medium" title={holderOf(r)}>{holderOf(r)}</span>
+                          <span className="min-w-0 truncate"><Chip meta={concept} /></span>
                         </div>
                         <span className="block truncate mt-0.5 text-[11px] text-gray-400" title={collectionDetail(r)}>{collectionDetail(r)}</span>
                       </>

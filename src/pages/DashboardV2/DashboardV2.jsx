@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import MonthNavigator from '../../components/ui/MonthNavigator'
 import SectionPlaceholder from './SectionPlaceholder'
-import GestionSection from './sections/gestion/GestionSection'
+import CfpSection from './sections/cfp/CfpSection'
 import { MonthDataProvider } from './useMonthData'
 import { PLATFORM_START, currentMonthStart } from './monthWindow'
 
@@ -11,13 +11,13 @@ import { PLATFORM_START, currentMonthStart } from './monthWindow'
 // cuando una fase la porta, se le agrega `Component` y el placeholder deja de verse.
 const SECTIONS = [
   {
-    id: 'gestion',
+    id: 'cfp',
     label: 'Gestión CFP',
     feature: 'billing',
-    Component: GestionSection
+    Component: CfpSection
   },
   {
-    id: 'finanzas',
+    id: 'finance',
     label: 'Finanzas',
     feature: 'dashboard_financials',
     upcoming: [
@@ -32,7 +32,7 @@ const SECTIONS = [
     ]
   },
   {
-    id: 'comercial',
+    id: 'commercial',
     label: 'Comercial',
     feature: 'dashboard_financials',
     upcoming: [
@@ -43,7 +43,7 @@ const SECTIONS = [
     ]
   },
   {
-    id: 'asistencia',
+    id: 'attendance',
     label: 'Asistencia',
     feature: 'statistics',
     upcoming: [

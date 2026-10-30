@@ -39,7 +39,12 @@ rendimiento también se descartan: se calcula en el cliente con lo que ya existe
       `explain/docs/validate.js` (valor con signo, `info`, subtotales `=`, `check: false`); cada
       explicación nueva va con su muestra en `docSamples.js`. Quedan para su fase: Switch,
       Segmented, TipRow, Sparkline, DeltaTag, FinKpi, MetricTabs, MesPicker.
-- [ ] Fase 2 — Gestión CFP solo lectura
+- [x] Fase 2 — Gestión CFP solo lectura
+      Control (solo lectura): oct-26 50 filas, previsto = cobrado = 1.793.460, 1 ancla de 81.000;
+      sep-26 1.767.730 y A-3475 marcada "monto distinto" (96.360 contra 32.120 del servicio).
+      Revisión adversarial: 29 confirmados y corregidos (días prorrateados = cobrables / 4×frec,
+      bajas y reingresos desde los períodos de inactividad, heredados no son alta, IVA emitido con
+      las líneas guardadas, orden por el monto visible, modo trabadas, móvil, ids en inglés).
 - [ ] Fase 3 — Cobranza con escrituras
 - [ ] B1 — facturación de meses de promo (edge function biller + invoiceAmounts.js)
 - [ ] Fase 4 — Facturación
@@ -124,8 +129,8 @@ src/pages/DashboardV2/
   ui/      Sheet, StatCard(infoId), FinKpi, DeltaTag, Sparkline, BreakdownBars(keepOrder/pp),
            MetricTabs(size), Segmented, TipRow, Chip, SectionHeading, Avatar, MesPicker
   explain/ ExplainContext.jsx, InfoButton.jsx, ExplainModal.jsx, FormulaRow.jsx,
-           docs/{gestion,finanzas,comercial,asistencia,index}.js
-  sections/gestion/  sections/finanzas/  sections/comercial/  sections/asistencia/
+           docs/{cfp,finance,commercial,attendance,index}.js
+  sections/cfp/  sections/finance/  sections/commercial/  sections/attendance/
 src/services/dashboardV2/   (cada uno con su *.test.js)
   padron.js            # adaptador del padrón y derivaciones: due, facturable, IVA, estado, bloqueos, desfase
   financeSeriesV2.js   # banco, caja real, pagado del propio mes, sueldos desglosados, cascada de márgenes, cuadrantes, puente

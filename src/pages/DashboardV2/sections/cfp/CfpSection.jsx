@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Card from '../../../../components/ui/Card'
 import SectionHeading from '../../ui/SectionHeading'
 import LoadState from '../../ui/LoadState'
@@ -7,43 +7,48 @@ import { useMonthData } from '../../useMonthData'
 import { monthLabelOf, plural } from '../../format'
 import { loadPadron } from '../../../../services/dashboardV2/queries'
 import { collectionTotals, invoicingTotals, sortRows } from '../../../../services/dashboardV2/padron'
-import { searchText } from './cfpText'
+import { normalizeSearch, searchText } from './cfpText'
 import CfpSummary from './CfpSummary'
 import BlockedBanner from './BlockedBanner'
 import CfpToolbar, { STATUS_FILTERS } from './CfpToolbar'
 import CfpTable from './CfpTable'
 
-const DOMAINS = [{ id: 'cobranza', label: 'Cobranza' }, { id: 'facturacion', label: 'Facturación' }]
+const DOMAINS = [{ id: 'collection', label: 'Cobranza' }, { id: 'invoicing', label: 'Facturación' }]
 
 // Gestión CFP, fase 2: cobranza y facturación del mes de solo lectura. El cobro y
 // la emisión siguen en la ficha del cliente hasta las fases 3 y 4.
-export default function GestionSection({ selected }) {
+export default function CfpSection({ selected }) {
   const padron = useMonthData('padron', loadPadron, selected)
   const rows = padron.status === 'ready' ? padron.data : null
   const monthLabel = monthLabelOf(selected.year, selected.month)
 
-  const [domain, setDomain] = useState('cobranza')
+  const [domain, setDomain] = useState('collection')
   // Un filtro de estado por panel: cada uno recuerda el suyo, y pasar de "Emitidas"
   // a Cobranza no deja un filtro que de ese lado no existe.
-  const [statusByDomain, setStatusByDomain] = useState({ cobranza: 'pendientes', facturacion: 'pendientes' })
+  const [statusByDomain, setStatusByDomain] = useState({ collection: 'pending', invoicing: 'pending' })
   const [onlyBlocked, setOnlyBlocked] = useState(false)
   const [query, setQuery] = useState('')
   const [order, setOrder] = useState('plan')
 
-  const status = STATUS_FILTERS[domain].some(s => s.key === statusByDomain[domain]) ? statusByDomain[domain] : 'pendientes'
+  // El modo trabadas es del mes en que se pidió: al cambiar de mes se sale.
+  useEffect(() => { setOnlyBlocked(false) }, [selected.year, selected.month])
 
+  const status = STATUS_FILTERS[domain].some(s => s.key === statusByDomain[domain]) ? statusByDomain[domain] : 'pending'
   const totals = useMemo(() => (rows ? { collection: collectionTotals(rows), invoicing: invoicingTotals(rows) } : null), [rows])
+  // Solo tiene sentido mientras el aviso (que tiene la salida del modo) está a la vista.
+  const blockedCount = totals ? totals.invoicing.blockedRecord + totals.invoicing.blockedBiller : 0
+  const blockedMode = onlyBlocked && domain === 'invoicing' && blockedCount > 0
 
   const visible = useMemo(() => {
     if (!rows) return []
-    const q = query.trim().toLowerCase()
-    const bucket = domain === 'cobranza' ? 'collectionBucket' : 'invoiceBucket'
+    const q = normalizeSearch(query)
+    const bucket = domain === 'collection' ? 'collectionBucket' : 'invoiceBucket'
     return sortRows(rows.filter(r => {
       // En modo trabadas el estado no se aplica: la tabla muestra justo lo que cuenta el aviso.
-      if (onlyBlocked) { if (!r.block) return false } else if (status !== 'todos' && r[bucket] !== status) return false
+      if (blockedMode ? !r.block : status !== 'all' && r[bucket] !== status) return false
       return !q || searchText(r, domain).includes(q)
     }), order, domain)
-  }, [rows, domain, status, onlyBlocked, query, order])
+  }, [rows, domain, status, blockedMode, query, order])
 
   const changeDomain = id => { setOnlyBlocked(false); setDomain(id) }
   const changeStatus = key => { setOnlyBlocked(false); setStatusByDomain(s => ({ ...s, [domain]: key })) }
@@ -79,12 +84,12 @@ export default function GestionSection({ selected }) {
             {() => (
               <>
                 <CfpSummary domain={domain} collection={totals.collection} invoicing={totals.invoicing} />
-                {domain === 'facturacion' && (
-                  <BlockedBanner invoicing={totals.invoicing} onlyBlocked={onlyBlocked} onToggle={() => setOnlyBlocked(v => !v)} />
+                {domain === 'invoicing' && (
+                  <BlockedBanner invoicing={totals.invoicing} onlyBlocked={blockedMode} onToggle={() => setOnlyBlocked(!blockedMode)} />
                 )}
                 <CfpToolbar
                   domain={domain}
-                  status={onlyBlocked ? null : status}
+                  status={blockedMode ? null : status}
                   onStatus={changeStatus}
                   query={query}
                   onQuery={setQuery}
