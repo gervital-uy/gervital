@@ -51,7 +51,9 @@ describe('registro de explicaciones', () => {
   }
 
   test.each(ids)('%s cierra con datos completos', id => {
-    expect(docProblems(DOCS[id](DOC_SAMPLES[id].full))).toEqual([])
+    for (const ctx of [].concat(DOC_SAMPLES[id].full)) {
+      expect(docProblems(DOCS[id](ctx))).toEqual([])
+    }
   })
 
   test.each(ids)('%s no se rompe con datos parciales', id => {

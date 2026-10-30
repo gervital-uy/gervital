@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import MonthNavigator from '../../components/ui/MonthNavigator'
 import SectionPlaceholder from './SectionPlaceholder'
+import GestionSection from './sections/gestion/GestionSection'
 import { MonthDataProvider } from './useMonthData'
 import { PLATFORM_START, currentMonthStart } from './monthWindow'
 
@@ -13,11 +14,7 @@ const SECTIONS = [
     id: 'gestion',
     label: 'Gestión CFP',
     feature: 'billing',
-    upcoming: [
-      { title: 'Cobranza', hint: 'Padrón del mes con previsto, cobrado y pendiente; cobro por fila y en lote.' },
-      { title: 'Facturación', hint: 'Qué falta facturar, IVA del mes, facturas trabadas y emisión en lote.' },
-      { title: 'Promociones y otros descuentos', hint: 'Promos prepagas, descuentos puntuales, cobertura e historial.' }
-    ]
+    Component: GestionSection
   },
   {
     id: 'finanzas',

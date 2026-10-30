@@ -690,6 +690,10 @@ video {
   right: 0px;
 }
 
+.right-1\.5 {
+  right: 0.375rem;
+}
+
 .right-2 {
   right: 0.5rem;
 }
@@ -876,6 +880,10 @@ video {
 
 .mt-8 {
   margin-top: 2rem;
+}
+
+.mt-px {
+  margin-top: 1px;
 }
 
 .block {
@@ -1235,6 +1243,10 @@ video {
   min-width: 18px;
 }
 
+.min-w-\[200px\] {
+  min-width: 200px;
+}
+
 .min-w-\[230px\] {
   min-width: 230px;
 }
@@ -1245,6 +1257,14 @@ video {
 
 .min-w-\[4rem\] {
   min-width: 4rem;
+}
+
+.min-w-\[520px\] {
+  min-width: 520px;
+}
+
+.min-w-\[640px\] {
+  min-width: 640px;
 }
 
 .max-w-0 {
@@ -1305,6 +1325,10 @@ video {
 
 .shrink-0 {
   flex-shrink: 0;
+}
+
+.table-fixed {
+  table-layout: fixed;
 }
 
 .-translate-x-1\/2 {
@@ -1513,6 +1537,10 @@ video {
   gap: 0.375rem;
 }
 
+.gap-10 {
+  gap: 2.5rem;
+}
+
 .gap-2 {
   gap: 0.5rem;
 }
@@ -1557,6 +1585,10 @@ video {
   column-gap: 1rem;
 }
 
+.gap-x-6 {
+  column-gap: 1.5rem;
+}
+
 .gap-x-8 {
   column-gap: 2rem;
 }
@@ -1571,6 +1603,10 @@ video {
 
 .gap-y-2 {
   row-gap: 0.5rem;
+}
+
+.gap-y-3 {
+  row-gap: 0.75rem;
 }
 
 .space-y-0\.5 > :not([hidden]) ~ :not([hidden]) {
@@ -2129,6 +2165,10 @@ video {
   background-color: rgb(249 250 251 / 0.6);
 }
 
+.bg-gray-50\/70 {
+  background-color: rgb(249 250 251 / 0.7);
+}
+
 .bg-gray-50\/90 {
   background-color: rgb(249 250 251 / 0.9);
 }
@@ -2310,6 +2350,10 @@ video {
 .bg-white {
   --tw-bg-opacity: 1;
   background-color: rgb(255 255 255 / var(--tw-bg-opacity, 1));
+}
+
+.bg-white\/60 {
+  background-color: rgb(255 255 255 / 0.6);
 }
 
 .bg-white\/70 {
@@ -2591,8 +2635,16 @@ video {
   padding-right: 1rem;
 }
 
+.pr-5 {
+  padding-right: 1.25rem;
+}
+
 .pr-6 {
   padding-right: 1.5rem;
+}
+
+.pr-8 {
+  padding-right: 2rem;
 }
 
 .pt-1 {
@@ -2659,6 +2711,10 @@ video {
 
 .text-\[10px\] {
   font-size: 10px;
+}
+
+.text-\[11\.5px\] {
+  font-size: 11.5px;
 }
 
 .text-\[11px\] {
@@ -2790,6 +2846,10 @@ video {
 
 .leading-tight {
   line-height: 1.25;
+}
+
+.tracking-normal {
+  letter-spacing: 0em;
 }
 
 .tracking-tight {
@@ -3007,6 +3067,11 @@ video {
 .text-red-800 {
   --tw-text-opacity: 1;
   color: rgb(153 27 27 / var(--tw-text-opacity, 1));
+}
+
+.text-rose-500 {
+  --tw-text-opacity: 1;
+  color: rgb(244 63 94 / var(--tw-text-opacity, 1));
 }
 
 .text-rose-600 {
@@ -3479,6 +3544,10 @@ video {
   background-color: rgb(249 250 251 / 0.5);
 }
 
+.hover\:bg-gray-50\/70:hover {
+  background-color: rgb(249 250 251 / 0.7);
+}
+
 .hover\:bg-gray-50\/80:hover {
   background-color: rgb(249 250 251 / 0.8);
 }
@@ -3552,9 +3621,24 @@ video {
   background-color: rgb(245 243 255 / var(--tw-bg-opacity, 1));
 }
 
+.hover\:bg-white:hover {
+  --tw-bg-opacity: 1;
+  background-color: rgb(255 255 255 / var(--tw-bg-opacity, 1));
+}
+
+.hover\:text-amber-900:hover {
+  --tw-text-opacity: 1;
+  color: rgb(120 53 15 / var(--tw-text-opacity, 1));
+}
+
 .hover\:text-blue-500:hover {
   --tw-text-opacity: 1;
   color: rgb(59 130 246 / var(--tw-text-opacity, 1));
+}
+
+.hover\:text-emerald-700:hover {
+  --tw-text-opacity: 1;
+  color: rgb(4 120 87 / var(--tw-text-opacity, 1));
 }
 
 .hover\:text-emerald-900:hover {
@@ -3897,6 +3981,18 @@ video {
     gap: 2rem;
   }
 
+  .sm\:divide-x > :not([hidden]) ~ :not([hidden]) {
+    --tw-divide-x-reverse: 0;
+    border-right-width: calc(1px * var(--tw-divide-x-reverse));
+    border-left-width: calc(1px * calc(1 - var(--tw-divide-x-reverse)));
+  }
+
+  .sm\:divide-y-0 > :not([hidden]) ~ :not([hidden]) {
+    --tw-divide-y-reverse: 0;
+    border-top-width: calc(0px * calc(1 - var(--tw-divide-y-reverse)));
+    border-bottom-width: calc(0px * var(--tw-divide-y-reverse));
+  }
+
   .sm\:rounded-2xl {
     border-radius: 1rem;
   }
@@ -3905,9 +4001,48 @@ video {
     padding: 1rem;
   }
 
+  .sm\:px-5 {
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+  }
+
   .sm\:px-6 {
     padding-left: 1.5rem;
     padding-right: 1.5rem;
+  }
+
+  .sm\:px-7 {
+    padding-left: 1.75rem;
+    padding-right: 1.75rem;
+  }
+
+  .sm\:py-0 {
+    padding-top: 0px;
+    padding-bottom: 0px;
+  }
+
+  .sm\:pb-0 {
+    padding-bottom: 0px;
+  }
+
+  .sm\:pl-5 {
+    padding-left: 1.25rem;
+  }
+
+  .sm\:pl-7 {
+    padding-left: 1.75rem;
+  }
+
+  .sm\:pr-5 {
+    padding-right: 1.25rem;
+  }
+
+  .sm\:pr-7 {
+    padding-right: 1.75rem;
+  }
+
+  .sm\:pt-0 {
+    padding-top: 0px;
   }
 }
 
