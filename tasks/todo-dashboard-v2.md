@@ -30,7 +30,7 @@ rendimiento también se descartan: se calcula en el cliente con lo que ya existe
   esquema, e independientes de la v2.
 
 ## Checklist por fase (detalle en §7)
-- [ ] B2 — migración de seguridad (guardas de rol + revocar EXECUTE a anon)
+- [ ] B2 — migración de seguridad 093: escrita en `fix/security-hardening`, POSTERGADA (el usuario no quiere migraciones ahora, 2026-10-30). Sin migración: apagar el signup + rotar las 6 contraseñas
 - [x] Fase 0 — ruta, topbar, shell con pestañas y placeholders
       (`/dashboard-v2`, feature `dashboard_v2` = superadmin, entrada "v2" con ícono DashboardSpeed
       al lado de Dashboard — label corto porque la topbar del superadmin ya está al límite de ancho)
