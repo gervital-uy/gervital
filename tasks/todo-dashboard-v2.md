@@ -14,6 +14,21 @@ DEFINER sin guarda y ejecutables por `anon`) y el estado de facturación de las 
 - Primera pestaña a portar: Gestión CFP.
 - Meses de promo: cada mes se factura por su servicio (CLAUDE.md); qué hacer con A-3475 lo define con el contador.
 
+## Decisión del usuario (2026-10-30): la v2 no cambia la base
+Si una pieza necesita cambiar el esquema, se deshabilita. Las RPC nuevas que eran solo por
+rendimiento también se descartan: se calcula en el cliente con lo que ya existe.
+- **Fuera:** punto "accionable" en Bajas por motivo (B9), columna Motivo en Otros descuentos
+  (B10), costo por chofer / pago por tramo (B12: se reparte el costo mensual plano por tramo),
+  devolución por baja (no factible), reactivar promos en lote (B11).
+- **Sin RPC nuevas (B3, B4, B5, B15):** lecturas existentes + cálculo en el navegador (Finanzas pide
+  el panel una vez por mes).
+- **Con datos que ya existen:** pausa vs baja con `churn_followups.stage` (B13); prestadores con
+  `created_at` como inicio y aproximación en meses pasados, aclarada en la "i" (B6); `director_bps`
+  calculado sin persistir (B14); aforo y meta neta como filas de `app_settings` (tabla existente,
+  admin+ escribe) o controles que solo simulan (B8).
+- B1 no toca la base (edge function `biller` + `invoiceAmounts.js`). B2/093 son permisos, no
+  esquema, e independientes de la v2.
+
 ## Checklist por fase (detalle en §7)
 - [ ] B2 — migración de seguridad (guardas de rol + revocar EXECUTE a anon)
 - [x] Fase 0 — ruta, topbar, shell con pestañas y placeholders
@@ -29,7 +44,7 @@ DEFINER sin guarda y ejecutables por `anon`) y el estado de facturación de las 
 - [ ] Fase 7 — Comercial
 - [ ] Fase 8 — Finanzas: serie v2 + gráfico principal
 - [ ] Fase 9 — Finanzas: tarjetas
-- [ ] Fase 10 — Opcionales (B3–B15)
+- [ ] ~~Fase 10 — Opcionales (B3–B15)~~ descartada: la v2 no cambia la base (decisión 2026-10-30)
 
 ---
 
