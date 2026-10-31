@@ -6,7 +6,8 @@ import { promoMonthCollection } from '../promotions/promotionsView'
 // Cobrar respeta las promos prepagas igual que el panel: el mes ancla cobra el
 // paquete entero y se cobra como promo (promoId → collect_promo); los meses 2..N
 // ya están cubiertos y no se cobran sueltos.
-// Facturar = lo cobrado si el mes ya se cobró (regla: facturar = lo cobrado).
+// Facturar = lo cobrado si el mes ya se cobró (regla: facturar = lo cobrado), salvo
+// un mes de promo, que se factura por su servicio (invoiceAmounts.js).
 export function buildBulkRows(panelRows, mode) {
   const isPay = mode === 'pay'
   return (panelRows || [])
@@ -16,7 +17,7 @@ export function buildBulkRows(panelRows, mode) {
     .map(r => {
       const amount = isPay
         ? promoMonthCollection({ promoIndex: r.promoIndex, promoTotalAmount: r.promoTotalAmount, monthAmount: r.amount }).due
-        : billableTotal({ paymentStatus: r.paymentStatus, paidAmount: r.paidAmount, liveAmount: r.amount })
+        : billableTotal({ paymentStatus: r.paymentStatus, paidAmount: r.paidAmount, liveAmount: r.amount, promoId: r.promoId })
       const coveredByPromo = isPay && r.promoIndex != null && r.promoIndex > 1
       const eligibility = (!isPay && !r.documentNumber) ? 'sin CI'
         : coveredByPromo ? 'en promo'

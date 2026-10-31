@@ -57,6 +57,11 @@ describe('buildBulkRows — facturar', () => {
     expect(r.eligibility).toBe('sin CI')
   })
 
+  test('a promo anchor already collected invoices its month service, not the package', () => {
+    const [r] = buildBulkRows([anchor({ paymentStatus: 'paid', paidAmount: 81000 })], 'emit')
+    expect(r.amount).toBe(27000)
+  })
+
   test('leaves out invoiced months and never collects promos', () => {
     const rows = buildBulkRows([anchor({ id: 'a' }), row({ id: 'inv', invoiceStatus: 'invoiced' })], 'emit')
     expect(rows.map(r => r.id)).toEqual(['a'])

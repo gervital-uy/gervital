@@ -73,8 +73,9 @@ export default function CollectionPanel({ rows, loading, kpis, onBulkAction, can
   const rowAmount = (r) =>
     tab === 'emitidas' ? r.invoicedAmount
     : tab === 'cobrados' ? r.cashCollected
-    // Facturar = lo cobrado si el mes ya se cobró (aunque haya diferido del cálculo).
-    : tab === 'facturas' ? billableTotal({ paymentStatus: r.paymentStatus, paidAmount: r.paidAmount, liveAmount: r.amount })
+    // Facturar = lo cobrado si el mes ya se cobró (aunque haya diferido del cálculo);
+    // un mes de promo, su servicio.
+    : tab === 'facturas' ? billableTotal({ paymentStatus: r.paymentStatus, paidAmount: r.paidAmount, liveAmount: r.amount, promoId: r.promoId })
     : promoMonthCollection({ promoIndex: r.promoIndex, promoTotalAmount: r.promoTotalAmount, monthAmount: r.amount }).due
   const totalPending = list.reduce((s, r) => s + rowAmount(r), 0)
 

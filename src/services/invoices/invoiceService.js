@@ -44,6 +44,7 @@ export async function getClientInvoices(clientId) {
     plannedDays: inv.plannedDays || 0,
     chargeableDays: inv.chargeableDays || 0,
     discountPercent: Number(inv.discountPercent) || 0,
+    promoId: inv.promoId || null,
     chargeableAmount: Number(inv.chargeableAmount) || 0,
     monthlyRate: Number(inv.monthlyRate) || 0,
 

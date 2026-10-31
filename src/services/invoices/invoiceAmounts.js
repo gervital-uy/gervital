@@ -8,17 +8,23 @@
 // El prorrateo mantiene el total EXACTO: se redondea transporte y asistencia
 // absorbe el resto, así asistencia + transporte === redondeo(cobrado).
 //
+// Excepción: un mes de una promo prepaga (promoId) se factura siempre por su
+// servicio, el cálculo en vivo con el descuento, nunca por lo cobrado. El mes
+// ancla cobra el paquete entero y los meses siguientes quedan en $0, pero cada
+// e-factura es el servicio de su mes (CLAUDE.md: el total del paquete es
+// cobranza, no facturación).
+//
 // NOTA: esta misma lógica está espejada inline en la edge function
 // supabase/functions/biller/index.ts (handler emit_invoice), que no puede
 // importar desde src/. Si cambiás la fórmula acá, actualizala allá también.
-export function prorateInvoiceLines({ paymentStatus, paidAmount, liveAttGross, liveTransGross, hasTransport }) {
+export function prorateInvoiceLines({ paymentStatus, paidAmount, liveAttGross, liveTransGross, hasTransport, promoId = null }) {
   const attEff = Number(liveAttGross) || 0
   const transEff = hasTransport ? (Number(liveTransGross) || 0) : 0
   const liveTotal = attEff + transEff
 
-  const paid = paymentStatus === 'paid' && paidAmount != null ? Number(paidAmount) : null
+  const paid = !promoId && paymentStatus === 'paid' && paidAmount != null ? Number(paidAmount) : null
 
-  // Mes no cobrado → default = cálculo en vivo
+  // Mes no cobrado o de promo → default = cálculo en vivo
   if (paid == null) {
     return { attGross: Math.round(attEff), transGross: Math.round(transEff) }
   }
@@ -33,9 +39,10 @@ export function prorateInvoiceLines({ paymentStatus, paidAmount, liveAttGross, l
 }
 
 // Monto total a facturar de un cliente/mes: el COBRADO si el mes ya se cobró
-// (aunque haya diferido del cálculo), si no el cálculo en vivo. Es la versión
-// "un solo número" de prorateInvoiceLines, para listados (panel de cobranza, bulk).
-export function billableTotal({ paymentStatus, paidAmount, liveAmount }) {
-  if (paymentStatus === 'paid' && paidAmount != null) return Number(paidAmount)
+// (aunque haya diferido del cálculo), si no el cálculo en vivo; un mes de promo,
+// siempre el cálculo en vivo. Es la versión "un solo número" de
+// prorateInvoiceLines, para listados (panel de cobranza, bulk).
+export function billableTotal({ paymentStatus, paidAmount, liveAmount, promoId = null }) {
+  if (!promoId && paymentStatus === 'paid' && paidAmount != null) return Number(paidAmount)
   return Number(liveAmount) || 0
 }

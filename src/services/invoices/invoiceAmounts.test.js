@@ -24,6 +24,15 @@ describe('billableTotal', () => {
   test('missing live amount coerces to 0', () => {
     expect(billableTotal({ paymentStatus: 'pending', paidAmount: null, liveAmount: undefined })).toBe(0)
   })
+
+  // Promo 426057b2 de oct-26: el ancla cobró el paquete (81.000) y su servicio es 27.000.
+  test('promo anchor: the month service, never the collected package', () => {
+    expect(billableTotal({ paymentStatus: 'paid', paidAmount: 81000, liveAmount: 27000, promoId: 'p1' })).toBe(27000)
+  })
+
+  test('promo month covered by the package: the month service, not the $0 collected', () => {
+    expect(billableTotal({ paymentStatus: 'prepaid', paidAmount: 0, liveAmount: 32120, promoId: 'p1' })).toBe(32120)
+  })
 })
 
 describe('prorateInvoiceLines', () => {
@@ -85,6 +94,22 @@ describe('prorateInvoiceLines', () => {
       liveAttGross: 10000, liveTransGross: 2000, hasTransport: true
     })
     expect(r).toEqual({ attGross: 0, transGross: 0 })
+  })
+
+  test('promo anchor: lines are the month service, not the collected package', () => {
+    const r = prorateInvoiceLines({
+      paymentStatus: 'paid', paidAmount: 96360, promoId: 'p1',
+      liveAttGross: 27000, liveTransGross: 5120, hasTransport: true
+    })
+    expect(r).toEqual({ attGross: 27000, transGross: 5120 })
+  })
+
+  test('promo month covered by the package: lines are the month service', () => {
+    const r = prorateInvoiceLines({
+      paymentStatus: 'prepaid', paidAmount: 0, promoId: 'p1',
+      liveAttGross: 27000, liveTransGross: 5120, hasTransport: true
+    })
+    expect(r).toEqual({ attGross: 27000, transGross: 5120 })
   })
 
   test('rounding: proration never drifts the total off the collected amount', () => {

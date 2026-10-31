@@ -70,10 +70,12 @@ export default function EmitInvoiceModal({
     const freq = plan?.frequency ?? client?.plan?.frequency ?? ''
     const sched = plan?.schedule ?? client?.plan?.schedule ?? ''
     const dtoSuffix = billing.discountPercent > 0 ? ` (${billing.discountPercent}% dto)` : ''
-    // Default = lo cobrado (prorrateado) si el mes ya se cobró; si no, el cálculo en vivo.
+    // Default = lo cobrado (prorrateado) si el mes ya se cobró; si no, o si es un mes
+    // de promo, el cálculo en vivo.
     const { attGross, transGross } = prorateInvoiceLines({
       paymentStatus: invoice?.paymentStatus,
       paidAmount: invoice?.paidAmount,
+      promoId: invoice?.promoId,
       liveAttGross: billing.attendanceChargeableGross,
       liveTransGross: billing.transportChargeableGross,
       hasTransport: billing.hasTransport
