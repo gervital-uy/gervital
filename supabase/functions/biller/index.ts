@@ -163,7 +163,7 @@ Deno.serve(async (req) => {
       }
       let parsed: { id?: number; serie?: string; numero?: string; hash?: string }
       try { parsed = JSON.parse(raw) } catch { parsed = {} }
-      await admin.rpc('mark_invoice_emitted', {
+      const { error: markErr } = await admin.rpc('mark_invoice_emitted', {
         p_client_id: clientId, p_year: year, p_month: month,
         p_biller_id: parsed.id ?? null, p_serie: parsed.serie ?? '', p_numero: parsed.numero ?? '', p_hash: parsed.hash ?? null,
         // Fecha de emisión del comprobante (la que va en la factura DGI), no el timestamp del record.
@@ -182,6 +182,16 @@ Deno.serve(async (req) => {
         p_trans_charge_net: transNet,
         p_trans_charge_gross: transGross,
       })
+      // Biller ya emitió: si no se pudo guardar, el mes no puede volver a figurar como
+      // listo para emitir. Queda el comprobante en emit_error para resolverlo a mano.
+      if (markErr) {
+        const emitted = `${parsed.serie ?? ''}-${parsed.numero ?? ''} (id ${parsed.id ?? '?'})`
+        await admin.rpc('set_invoice_emit_error', {
+          p_client_id: clientId, p_year: year, p_month: month,
+          p_error: `Biller emitió ${emitted} pero no se pudo guardar: ${markErr.message}. No reintentar: registrarlo a mano.`,
+        })
+        return json({ error: `Biller emitió el comprobante ${emitted} pero no se pudo guardar en la base`, detail: markErr.message }, 500)
+      }
       return json({ ok: true, serie: parsed.serie, numero: parsed.numero, id: parsed.id })
     }
 
