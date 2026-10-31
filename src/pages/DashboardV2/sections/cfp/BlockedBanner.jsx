@@ -1,6 +1,9 @@
-// Aviso de facturas que no pueden emitirse, solo cuando hay alguna. "Ver solo las
-// trabadas" es un modo de la tabla, no un filtro que se suma al estado: muestra
-// exactamente las filas que cuenta el aviso.
+// Un número resaltado con su texto en singular o plural.
+const n = (count, one, many) => <><span className="font-semibold text-amber-900">{count}</span> {count === 1 ? one : many}</>
+
+// Aviso de facturas trabadas, solo cuando hay alguna: las que frena un dato de la
+// ficha y las que Biller rechazó. "Ver solo las trabadas" es un modo de la tabla, no
+// un filtro que se suma al estado: muestra exactamente las filas que cuenta el aviso.
 export default function BlockedBanner({ invoicing: f, onlyBlocked, onToggle }) {
   const total = f.blockedRecord + f.blockedBiller
   if (total === 0) return null
@@ -12,7 +15,7 @@ export default function BlockedBanner({ invoicing: f, onlyBlocked, onToggle }) {
             <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
             <path d="M12 9v4" /><path d="M12 17h.01" />
           </svg>
-          <span>{total === 1 ? '1 factura no puede emitirse' : `${total} facturas no pueden emitirse`}</span>
+          <span>{total === 1 ? '1 factura trabada' : `${total} facturas trabadas`}</span>
         </p>
         <button
           type="button"
@@ -29,12 +32,21 @@ export default function BlockedBanner({ invoicing: f, onlyBlocked, onToggle }) {
         ))}
       </div>
 
-      {/* Las dos colas de trabajo: la que se libera al corregir el dato y la que,
-          corregida, sigue esperando el cobro. */}
-      <p className="pl-6 mt-1.5 text-[11.5px] text-amber-800 leading-relaxed">
-        {f.blockedCollected > 0 && <><span className="font-semibold text-amber-900">{f.blockedCollected}</span> {f.blockedCollected === 1 ? 'se emite' : 'se emiten'} en cuanto se corrige el dato. </>}
-        {f.blockedUncollected > 0 && <><span className="font-semibold text-amber-900">{f.blockedUncollected}</span> {f.blockedUncollected === 1 ? 'espera' : 'esperan'} además el cobro de la cuota.</>}
-      </p>
+      {/* Las colas de trabajo: lo que se libera al corregir la ficha (y lo que,
+          corregido, sigue esperando el cobro) y los rechazos de Biller. */}
+      {f.blockedRecord > 0 && (
+        <p className="pl-6 mt-1.5 text-[11.5px] text-amber-800 leading-relaxed">
+          {f.blockedRecordCollected > 0 && <>{n(f.blockedRecordCollected, 'se emite', 'se emiten')} en cuanto se corrige el dato. </>}
+          {f.blockedRecordUncollected > 0 && <>{n(f.blockedRecordUncollected, 'espera', 'esperan')} además el cobro de la cuota. </>}
+          Los datos se corrigen en la ficha del cliente.
+        </p>
+      )}
+      {f.blockedBiller > 0 && (
+        <p className="pl-6 mt-1.5 text-[11.5px] text-amber-800 leading-relaxed">
+          {f.rejected > 0 && <>{n(f.rejected, 'rechazada por Biller se reintenta', 'rechazadas por Biller se reintentan')} con el botón Reintentar de su fila. </>}
+          {f.rejectedUncollected > 0 && <>{n(f.rejectedUncollected, 'rechazada espera', 'rechazadas esperan')} antes el cobro de la cuota.</>}
+        </p>
+      )}
 
       {onlyBlocked && (
         <p className="pl-6 mt-1.5 text-[11.5px] font-semibold text-amber-900">
@@ -42,10 +54,6 @@ export default function BlockedBanner({ invoicing: f, onlyBlocked, onToggle }) {
         </p>
       )}
 
-      <p className="pl-6 mt-1.5 text-[11.5px] text-amber-800 leading-relaxed">
-        {f.blockedRecord > 0 && <>Los datos que faltan se completan en la ficha del cliente. </>}
-        {f.blockedBiller > 0 && <>Los rechazos del facturador se reintentan desde la ficha del cliente.</>}
-      </p>
     </div>
   )
 }

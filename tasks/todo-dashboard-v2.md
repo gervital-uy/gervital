@@ -49,8 +49,27 @@ rendimiento también se descartan: se calcula en el cliente con lo que ya existe
       Mismas funciones que la ficha (mark_month_paid sin monto / collect_promo; unmarkMonthPaid /
       uncollect_promo). Antes de escribir relee monthly_invoices para no pisar un cobro o una factura
       registrados desde otro lado (mark_month_paid no lo controla). Revisión: 29 confirmados y corregidos.
-- [ ] B1 — facturación de meses de promo (edge function biller + invoiceAmounts.js)
-- [ ] Fase 4 — Facturación
+- [x] Verificación a fondo de la Fase 3 sin escribir en producción (2026-10-31): 5 escenarios trazados contra las
+      funciones vivas (pg_get_functiondef) y el estado real. 16 confirmados y corregidos: relectura por fila justo antes de
+      cada cobro (estado + monto en vivo: no se cobra un monto distinto del que se vio), notas de corrección conservadas,
+      revertir relee también el ancla, un mes facturado sin cobro no se cobra desde acá, reparación de un paquete roto
+      (la ficha deshace solo el ancla: bug de legacy, ClientDetail.jsx:1185), el día y el mes avanzan con la pestaña abierta,
+      una recarga fallida no tapa lo registrado.
+- [~] B1 — facturación de meses de promo: en el repo (303f60a: edge function biller + invoiceAmounts.js + llamadores de
+      legacy). **Falta deployar la edge function** (pide OK). La v2 no depende del deploy: manda los montos explícitos.
+      **Orden de salida:** deployar `biller` antes de (o junto con) publicar el front con 303f60a. Si no, el lote del
+      dashboard legacy muestra el servicio del ancla (27.000) pero emite lo cobrado (81.000). Hasta deployar, el ancla de
+      oct-26 de la promo 426057b2 (81.000 cobrados, servicio 27.000) se factura desde la v2, o desde la ficha
+      corrigiendo el monto a mano: el lote y la ficha de producción la facturarían por 81.000.
+- [x] Fase 4 — Facturación (sin emitir contra producción: la prueba queda pendiente)
+      Emitir una (hoja con lo que se imprime, total, IVA y fecha fija) o en lote (de a una, 1,1 s entre llamadas, detener,
+      reintentar). Fecha = último día hábil del mes y no antes. Antes de cada factura relee el mes y recalcula: no emite un
+      monto distinto del que se vio. Control oct-26: 50 facturas listas, 1.871.480 (asistencia 1.689.400 + transporte
+      182.080), IVA 321.206, 19 con transporte, ninguna trabada; el ancla de 426057b2 sale por 27.000 y no por 81.000.
+      Revisión adversarial: 21 confirmados y corregidos (lote congelado en StrictMode, corrección pendiente y asistencia en
+      $0 no se ofrecen para emitir, detener vale en la pausa, resultado de toda la sesión al cerrar el lote sin robar el foco,
+      lo que cambió no se reintenta, solo la lista scrollea, textos del aviso de trabadas, biller no da por emitida una
+      factura que no pudo guardar).
 - [ ] Fase 5 — Promociones y otros descuentos
 - [ ] Fase 6 — Asistencia
 - [ ] Fase 7 — Comercial

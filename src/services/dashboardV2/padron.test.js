@@ -197,9 +197,23 @@ describe('bloqueos y avisos de facturación', () => {
     expect(rows.map(r => r.canEmit)).toEqual([false, true, false, true])
     expect(invoicingTotals(rows)).toMatchObject({
       notIssued: 4, ready: 1, awaitingPayment: 1, missingRecordData: 1, rejected: 1,
-      blockedRecord: 2, blockedBiller: 1, blockedCollected: 2, blockedUncollected: 1,
+      blockedRecord: 2, blockedBiller: 1, blockedRecordCollected: 1, blockedRecordUncollected: 1, rejectedUncollected: 0,
       blockedReasons: ['2 falta CI', '1 error Biller']
     })
+  })
+
+  test('un cobro con corrección pendiente no se factura hasta corregirlo', () => {
+    expect(blockOf({ invoiceStatus: 'pending', documentNumber: '1', correctionPending: true, emitError: 'HTTP 400' }))
+      .toMatchObject({ chip: 'corrección pendiente', family: 'record' })
+    const [r] = build([['a', { payment_status: 'paid', paid_amount: 27000 }]], { invoices: [{ clientId: 'a', correctionPending: true }] })
+    expect(r).toMatchObject({ canEmit: false, invoiceBucket: 'pending' })
+    expect(invoicingTotals([r])).toMatchObject({ ready: 0, missingRecordData: 1, blockedRecordCollected: 1 })
+  })
+
+  test('con la asistencia en $0 (descuento del 100%) no hay factura que emitir', () => {
+    const [r] = build([['a', { attendance_gross: 0, transport_gross: 5120, payment_status: 'paid', paid_amount: 5120 }]])
+    expect(r).toMatchObject({ canEmit: false, billable: 5120 })
+    expect(r.block).toMatchObject({ chip: 'asistencia en $0', family: 'record' })
   })
 
   test('correo y dirección avisan pero no frenan', () => {

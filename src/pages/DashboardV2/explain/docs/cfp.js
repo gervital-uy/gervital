@@ -44,7 +44,7 @@ const invoicingDoc = ({ cfp, monthLabel = 'el mes' }) => {
     source: `Cada cliente de ${monthLabel} factura su propio servicio del mes: la asistencia con el descuento que tenga y el transporte pleno. Si el mes ya se cobró, el monto es lo cobrado, repartido entre asistencia y transporte como lo hace la emisión hacia Biller. Un mes de promo factura su cuota del mes, nunca el paquete. Sin cobro no se emite: un mes de promo cuenta como cobrado cuando se cobró el paquete.`,
     caveat: f.mismatchCount > 0
       ? `Hay ${plural(f.mismatchCount, 'factura emitida', 'facturas emitidas')} por un monto distinto del servicio del mes (por ejemplo, un primer mes de promo facturado por el paquete entero). Se muestran tal cual se emitieron: cómo se corrigen lo define el contador.`
-      : 'La emisión hacia Biller todavía factura el primer mes de una promo por lo cobrado, que es el paquete entero. Si se emite así, la fila va a aparecer con "monto distinto".'
+      : `Las facturas de ${monthLabel} se emiten con fecha de su último día hábil, de a una en Biller. Desde esta pantalla cada una sale por el servicio del mes, también el primer mes de una promo. Si alguna se emite por otro monto (por ejemplo, desde la ficha a mano), la fila va a aparecer con "monto distinto".`
   }
 }
 

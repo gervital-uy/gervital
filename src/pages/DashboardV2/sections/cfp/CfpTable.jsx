@@ -3,7 +3,7 @@ import Card from '../../../../components/ui/Card'
 import Avatar from '../../ui/Avatar'
 import Chip from '../../ui/Chip'
 import { DASH, formatShortDate, money, plural } from '../../format'
-import { paymentOffset, rowAmount } from '../../../../services/dashboardV2/padron'
+import { isBrokenPackage, paymentOffset, rowAmount } from '../../../../services/dashboardV2/padron'
 import {
   benefitOf, collectionChips, collectionDetail, conceptOf, holderOf, invoiceChips, invoiceDetail, isStruck
 } from './cfpText'
@@ -20,10 +20,11 @@ const COLUMNS = {
     { label: 'Acción', width: '140px', cls: 'px-3 text-center tracking-normal' }
   ],
   invoicing: [
-    { label: 'Cliente', width: '30%', cls: 'px-4' },
-    { label: 'Estado', width: '19%', cls: 'px-2' },
-    { label: 'Comprobante', width: '36%', cls: 'px-2' },
-    { label: 'Monto', width: '15%', cls: 'px-3 text-right tracking-normal' }
+    { label: 'Cliente', width: '27%', cls: 'px-4' },
+    { label: 'Estado', width: '21%', cls: 'px-2' },
+    { label: 'Comprobante', width: '37%', cls: 'px-2' },
+    { label: 'Monto', width: '15%', cls: 'px-3 text-right tracking-normal' },
+    { label: 'Acción', width: '120px', cls: 'px-3 text-center tracking-normal' }
   ]
 }
 
@@ -71,6 +72,37 @@ function PaymentDate({ row, year, month, actions }) {
   return <span className="text-[12px] text-gray-300">{DASH}</span>
 }
 
+// Facturación: emitir lo cobrado y listo; lo demás dice por qué no (y dónde se
+// resuelve) en el título.
+function IssueAction({ row, actions }) {
+  if (row.invoiceStatus === 'invoiced') {
+    return <span className="text-[11.5px] text-gray-400" title="Una factura emitida no se borra: se anula desde la ficha del cliente, con una nota de crédito">emitida</span>
+  }
+  if (actions.canIssue(row)) {
+    const failure = actions.failures[row.id]
+    const closed = actions.opensOn ? `Las facturas de este mes se emiten desde el ${formatShortDate(actions.opensOn)}, su último día hábil` : null
+    return (
+      <>
+        <button
+          type="button"
+          onClick={e => { e.stopPropagation(); actions.onIssueRow(row) }}
+          disabled={actions.busy || !!closed}
+          title={closed || undefined}
+          className="text-[12px] font-semibold text-emerald-700 hover:text-emerald-800 rounded-lg border border-emerald-200 px-2.5 py-1 hover:bg-emerald-50 transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+        >
+          {row.emitError ? 'Reintentar' : 'Emitir'}
+        </button>
+        {failure && <span className="block mt-0.5 text-[10px] font-medium text-rose-600" title={failure}>no se emitió</span>}
+      </>
+    )
+  }
+  if (row.billable > 0 && !row.isCollected) {
+    return <span className="text-[11.5px] text-gray-400" title="Sin cobro no hay factura: primero se registra el cobro en Cobranza">falta cobrar</span>
+  }
+  if (row.block) return <span className="text-[12px] text-gray-300" title={row.block.detail}>{DASH}</span>
+  return <span className="text-[12px] text-gray-300">{DASH}</span>
+}
+
 function RowAction({ row, actions }) {
   if (actions.canCollect(row)) {
     const dateError = actions.dateError(row)
@@ -90,7 +122,8 @@ function RowAction({ row, actions }) {
       </>
     )
   }
-  if (row.paymentStatus === 'paid') {
+  const broken = isBrokenPackage(row)
+  if (row.paymentStatus === 'paid' || broken) {
     const block = actions.revertBlock(row)
     if (block && row.invoiceStatus === 'invoiced') return <span className="text-[11.5px] text-gray-400" title={block}>facturada</span>
     if (block) return <span className="text-[12px] text-gray-300" title={block}>{DASH}</span>
@@ -99,24 +132,27 @@ function RowAction({ row, actions }) {
         type="button"
         onClick={e => { e.stopPropagation(); actions.onRevert(row) }}
         disabled={actions.busy}
-        className="text-[12px] text-gray-400 hover:text-rose-600 transition-colors disabled:opacity-40"
+        className={`text-[12px] transition-colors disabled:opacity-40 ${broken ? 'font-semibold text-rose-600 hover:text-rose-700' : 'text-gray-400 hover:text-rose-600'}`}
       >
-        Revertir
+        {broken ? 'Deshacer paquete' : 'Revertir'}
       </button>
     )
+  }
+  if (row.paymentStatus === 'pending' && row.invoiceStatus === 'invoiced') {
+    return <span className="text-[12px] text-gray-300" title="Tiene factura emitida sin cobro registrado: registrar el cobro desde acá pisaría el monto facturado">{DASH}</span>
   }
   return <span className="text-[12px] text-gray-300">{DASH}</span>
 }
 
-// El padrón del mes. En Cobranza se cobra desde acá (con `actions`): fecha por fila,
-// selección y revertir. Facturación sigue de solo lectura hasta la fase 4. El nombre
-// lleva a la ficha del cliente.
+// El padrón del mes. Con `actions` se trabaja desde acá: en Cobranza, fecha por
+// fila, selección y revertir; en Facturación, emitir una o varias. El nombre lleva a
+// la ficha del cliente.
 export default function CfpTable({ domain, rows, year, month, actions }) {
   const isCollection = domain === 'collection'
-  const columns = COLUMNS[domain].filter(c => isCollection ? (actions || c.label !== 'Acción') : true)
-  const selectedRows = isCollection && actions ? rows.filter(r => actions.selected.has(r.id) && actions.canCollect(r)) : []
-  const selectedTotal = selectedRows.reduce((s, r) => s + r.due, 0)
-  const ready = actions?.ready || []
+  const columns = COLUMNS[domain].filter(c => actions || c.label !== 'Acción')
+  const selectedRows = actions ? rows.filter(r => actions.selected.has(r.id) && actions.canSelect(r)) : []
+  const selectedTotal = selectedRows.reduce((s, r) => s + (isCollection ? r.due : r.billable), 0)
+  const ready = (isCollection && actions?.ready) || []
 
   return (
     // overflow-clip y no overflow-hidden: recorta las esquinas sin volverse el
@@ -148,13 +184,13 @@ export default function CfpTable({ domain, rows, year, month, actions }) {
             disabled={actions.busy}
             className="ml-auto rounded-xl bg-emerald-600 px-4 py-2 text-[12.5px] font-semibold text-white shadow-sm hover:bg-emerald-700 transition-colors disabled:opacity-60"
           >
-            {actions.busy ? 'Registrando…' : `Marcar cobrados (${ready.length})`}
+            {actions.writing ? 'Registrando…' : `Marcar cobrados (${ready.length})`}
           </button>
         </div>
       )}
 
       <div className="overflow-x-auto">
-        <table className={`w-full text-left table-fixed ${isCollection ? 'min-w-[900px]' : 'min-w-[640px]'}`}>
+        <table className={`w-full text-left table-fixed ${isCollection ? 'min-w-[900px]' : actions ? 'min-w-[760px]' : 'min-w-[640px]'}`}>
           <colgroup>
             {columns.map(c => <col key={c.label} style={{ width: c.width }} />)}
           </colgroup>
@@ -171,7 +207,7 @@ export default function CfpTable({ domain, rows, year, month, actions }) {
               const chips = isCollection ? collectionChips(r) : invoiceChips(r)
               const benefit = isCollection ? null : benefitOf(r)
               const struck = isStruck(r, domain)
-              const selectable = isCollection && actions?.canCollect(r)
+              const selectable = !!actions?.canSelect(r)
               const isSelected = selectable && actions.selected.has(r.id)
               const name = `${r.firstName} ${r.lastName}`
               return (
@@ -241,9 +277,9 @@ export default function CfpTable({ domain, rows, year, month, actions }) {
                       <PaymentDate row={r} year={year} month={month} actions={actions} />
                     </td>
                   )}
-                  {isCollection && actions && (
+                  {actions && (
                     <td className="px-3 py-2.5 text-center">
-                      <RowAction row={r} actions={actions} />
+                      {isCollection ? <RowAction row={r} actions={actions} /> : <IssueAction row={r} actions={actions} />}
                     </td>
                   )}
                 </tr>
@@ -253,7 +289,8 @@ export default function CfpTable({ domain, rows, year, month, actions }) {
         </table>
       </div>
 
-      {/* Barra de cobro masivo: aparece con la selección y registra todo con una misma fecha. */}
+      {/* Barra de la selección: en Cobranza registra todo con una misma fecha; en
+          Facturación abre el lote con esas facturas. */}
       {selectedRows.length > 0 && (
         <div className="sticky bottom-0 flex flex-wrap items-center gap-3 border-t border-gray-100 bg-gray-50/90 px-5 py-3 backdrop-blur">
           <span className="text-[13px] text-gray-600">
@@ -265,11 +302,11 @@ export default function CfpTable({ domain, rows, year, month, actions }) {
           </button>
           <button
             type="button"
-            onClick={() => actions.onPaySelected(selectedRows)}
+            onClick={() => (isCollection ? actions.onPaySelected(selectedRows) : actions.onIssueSelected(selectedRows))}
             disabled={actions.busy}
             className="ml-auto rounded-xl bg-emerald-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-emerald-700 transition-colors disabled:opacity-60"
           >
-            Registrar cobro ({selectedRows.length})
+            {isCollection ? `Registrar cobro (${selectedRows.length})` : `Emitir facturas (${selectedRows.length})`}
           </button>
         </div>
       )}

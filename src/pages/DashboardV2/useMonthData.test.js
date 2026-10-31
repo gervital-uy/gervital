@@ -16,6 +16,7 @@ function Consumer({ loader, selected, label = 'c', renders }) {
       {state.status}
       {state.data != null && `:${state.data}`}
       {state.refreshing && ':refreshing'}
+      {state.refreshError && `:refreshError ${state.refreshError.message}`}
       {state.status === 'error' && <button type="button" onClick={state.reload}>reintentar {label}</button>}
     </div>
   )
@@ -135,5 +136,34 @@ describe('useMonthData', () => {
     await act(async () => second.resolve('después'))
     expect(screen.getByTestId('c')).toHaveTextContent('ready:después')
     expect(loader).toHaveBeenCalledTimes(2)
+  })
+
+  test('si falla la recarga después de escribir, los datos quedan en pantalla con el error', async () => {
+    const second = deferred()
+    const loader = jest.fn()
+      .mockResolvedValueOnce('antes')
+      .mockReturnValueOnce(second.promise)
+      .mockResolvedValueOnce('después')
+
+    function Page() {
+      const invalidate = useInvalidateMonthData()
+      const [selected] = useState({ year: 2026, month: 9 })
+      return (
+        <>
+          <Consumer loader={loader} selected={selected} />
+          <button type="button" onClick={() => invalidate('padron')}>cobrar</button>
+        </>
+      )
+    }
+    render(<MonthDataProvider><Page /></MonthDataProvider>)
+    await flush()
+    fireEvent.click(screen.getByText('cobrar'))
+    await flush()
+    await act(async () => second.reject(new Error('sin red')))
+    expect(screen.getByTestId('c')).toHaveTextContent('ready:antes:refreshError sin red')
+    // La próxima recarga limpia el error
+    fireEvent.click(screen.getByText('cobrar'))
+    await flush()
+    expect(screen.getByTestId('c')).toHaveTextContent('ready:después')
   })
 })

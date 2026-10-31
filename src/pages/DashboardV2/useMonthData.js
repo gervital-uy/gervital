@@ -7,7 +7,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 // mientras tanto (`refreshing`).
 //
 // Uso: const padron = useMonthData('padron', loadPadron, selected)
-//   → { status: 'loading' | 'ready' | 'error', data, error, refreshing, reload }
+//   → { status: 'loading' | 'ready' | 'error', data, error, refreshing, refreshError, reload }
+// Si falla una recarga con datos en pantalla, los datos quedan (con refreshError):
+// lo que se acaba de escribir no desaparece detrás de un error.
 // `key` identifica al loader: dos loaders distintos no pueden compartir key.
 
 const MonthDataContext = createContext(null)
@@ -41,8 +43,8 @@ export function MonthDataProvider({ children }) {
 export const useInvalidateMonthData = () => useContext(MonthDataContext)?.invalidate || (() => {})
 
 const stateFromCache = (entry, cacheKey) => (entry?.status === 'ready'
-  ? { key: cacheKey, status: 'ready', data: entry.data, error: null, refreshing: false }
-  : { key: cacheKey, status: 'loading', data: null, error: null, refreshing: false })
+  ? { key: cacheKey, status: 'ready', data: entry.data, error: null, refreshing: false, refreshError: null }
+  : { key: cacheKey, status: 'loading', data: null, error: null, refreshing: false, refreshError: null })
 
 export function useMonthData(key, loader, { year, month }) {
   const shared = useContext(MonthDataContext)
@@ -73,11 +75,16 @@ export function useMonthData(key, loader, { year, month }) {
       )
     }
     setState(prev => (prev.key === cacheKey && prev.status === 'ready'
-      ? { ...prev, refreshing: true }
-      : { key: cacheKey, status: 'loading', data: null, error: null, refreshing: false }))
+      ? { ...prev, refreshing: true, refreshError: null }
+      : { key: cacheKey, status: 'loading', data: null, error: null, refreshing: false, refreshError: null }))
     entry.promise.then(
-      data => { if (!cancelled) setState({ key: cacheKey, status: 'ready', data, error: null, refreshing: false }) },
-      error => { if (!cancelled) setState({ key: cacheKey, status: 'error', data: null, error, refreshing: false }) }
+      data => { if (!cancelled) setState({ key: cacheKey, status: 'ready', data, error: null, refreshing: false, refreshError: null }) },
+      error => {
+        if (cancelled) return
+        setState(prev => (prev.key === cacheKey && prev.status === 'ready'
+          ? { ...prev, refreshing: false, refreshError: error }
+          : { key: cacheKey, status: 'error', data: null, error, refreshing: false, refreshError: null }))
+      }
     )
     return () => { cancelled = true }
   // `loader` queda afuera a propósito: cambia de identidad en cada render y `key`

@@ -1,17 +1,32 @@
 import { useEffect, useRef } from 'react'
 import { plural } from '../../format'
 
-// Resultado de la última acción de cobro: cuántos salieron y, si algo falló, quién y
-// por qué (lo que falló sigue en la tabla con su fecha, para reintentar). Toma el
-// foco al aparecer: el botón que lanzó la acción puede haber desaparecido, y así el
-// aviso queda a la vista y lo lee el lector de pantalla.
+// Textos por acción: lo que salió y el encabezado de lo que falló.
+const TEXTS = {
+  paid: {
+    success: ({ ok }) => `${plural(ok, 'cobro registrado', 'cobros registrados')}.`,
+    failed: n => `${plural(n, 'cobro no se registró', 'cobros no se registraron')}:`
+  },
+  reverted: {
+    success: ({ name }) => `Se revirtió el cobro de ${name}.`,
+    failed: () => 'No se pudo revertir el cobro.'
+  },
+  issued: {
+    success: ({ ok }) => `${plural(ok, 'factura emitida', 'facturas emitidas')} en Biller.`,
+    failed: n => `${plural(n, 'factura no se emitió', 'facturas no se emitieron')}:`
+  }
+}
+
+// Resultado de la última acción (cobro, reversión o emisión): cuántas salieron y, si
+// algo falló, quién y por qué (lo que falló sigue en la tabla, para reintentar). Toma
+// el foco al aparecer: el botón que lanzó la acción puede haber desaparecido, y así
+// el aviso queda a la vista y lo lee el lector de pantalla.
 export default function ActionOutcome({ outcome, refreshing, onDismiss }) {
-  const { kind, ok, failed, name } = outcome
+  const { kind, ok, failed } = outcome
   const ref = useRef(null)
   useEffect(() => { ref.current?.focus() }, [outcome])
-  const success = kind === 'reverted'
-    ? (ok ? `Se revirtió el cobro de ${name}.` : null)
-    : (ok ? `${plural(ok, 'cobro registrado', 'cobros registrados')}.` : null)
+  const text = TEXTS[kind]
+  const success = ok ? text.success(outcome) : null
   const tone = failed.length ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-900'
 
   return (
@@ -31,10 +46,10 @@ export default function ActionOutcome({ outcome, refreshing, onDismiss }) {
         {failed.length > 0 && (
           <>
             <p className="font-semibold">
-              {kind === 'reverted' ? 'No se pudo revertir el cobro.' : `${plural(failed.length, 'cobro no se registró', 'cobros no se registraron')}:`}
+              {text.failed(failed.length)}
             </p>
             <ul className="flex flex-col gap-0.5">
-              {failed.map(f => <li key={f.name}><span className="font-medium">{f.name}</span>: {f.error}</li>)}
+              {failed.map((f, i) => <li key={`${f.name}-${i}`}><span className="font-medium">{f.name}</span>: {f.error}</li>)}
             </ul>
           </>
         )}

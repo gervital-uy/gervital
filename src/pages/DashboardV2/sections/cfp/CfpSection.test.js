@@ -99,7 +99,7 @@ describe('Gestión CFP: vistas', () => {
     renderSection()
     await screen.findByRole('table')
     fireEvent.click(screen.getByRole('button', { name: 'Facturación' }))
-    expect(screen.getByText('2 facturas no pueden emitirse')).toBeInTheDocument()
+    expect(screen.getByText('2 facturas trabadas')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Ver solo las trabadas (2)' }))
     // Beto no cobró y Eva sí: están en estados distintos y las dos aparecen
     expect(tableNames().sort()).toEqual(['Beto Beta', 'Eva Epsilon'])

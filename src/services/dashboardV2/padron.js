@@ -46,6 +46,11 @@ export function monthEvents(client, year, month) {
   }
 }
 
+// Un primer mes de promo que quedó pendiente con la promo cobrada: pasa si en la
+// ficha se deshace el cobro solo de ese mes. collect_promo lo rechaza ("ya está
+// cobrada"), así que lo único que lo arregla es deshacer el cobro del paquete.
+export const isBrokenPackage = row => row.promoIndex === 1 && row.paymentStatus === 'pending' && !!row.promoPaidDate
+
 // Las filas que pueden tener cuota proporcional: las únicas para las que hace falta
 // pedirle los días a calculate_month_billing.
 export const needsProration = ({ startDay, inactive }) => (startDay != null && startDay > 1) || !!inactive
@@ -64,16 +69,29 @@ export function ivaOf({ attGross, transGross }) {
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i
 
-// Lo que impide emitir la factura del mes. Biller rechaza sin documento (422) y un
-// rechazo anterior queda guardado en emit_error. Correo y dirección no frenan la
-// emisión: son avisos (receiverWarnings).
+// Lo que impide emitir la factura del mes. Biller rechaza sin documento (422); un
+// cobro marcado para corregir está cobrado por un monto que ya no corresponde
+// (mig 085), y facturarlo así deja una factura para anular; un rechazo anterior
+// queda guardado en emit_error y se puede reintentar. Correo y dirección no frenan
+// la emisión: son avisos (receiverWarnings).
 export function blockOf(row) {
   if (row.invoiceStatus === 'invoiced') return null
   if (!row.documentNumber) {
     return { chip: 'falta CI', family: 'record', detail: 'Falta la cédula en la ficha del cliente: Biller no emite sin documento' }
   }
+  if (row.correctionPending) {
+    return { chip: 'corrección pendiente', family: 'record', detail: 'El cobro del mes requiere corrección: resolvela en la ficha del cliente antes de facturar' }
+  }
   if (row.emitError) return { chip: 'error Biller', family: 'biller', detail: row.emitError }
   return null
+}
+
+// Un mes con la asistencia en $0 (descuento del 100%) y transporte cobrado: la
+// factura sale sin la línea del plan, y ni biller ni la ficha la emiten así.
+const NO_ATTENDANCE = {
+  chip: 'asistencia en $0',
+  family: 'record',
+  detail: 'La asistencia del mes queda en $0 (descuento del 100%): no se emite una factura solo de transporte'
 }
 
 export function receiverWarnings(row) {
@@ -91,6 +109,17 @@ export const rowAmount = (r, domain) => (domain === 'collection'
   ? r.expected
   : r.invoiceStatus === 'invoiced' ? r.invoicedAmount : r.billable)
 
+// Las dos líneas de la e-factura del mes (asistencia al 22%, transporte al 10%),
+// como las arma biller por defecto.
+export const invoiceLinesOf = row => prorateInvoiceLines({
+  paymentStatus: row.paymentStatus,
+  paidAmount: row.paidAmount,
+  liveAttGross: row.attendanceGross,
+  liveTransGross: row.transportGross,
+  hasTransport: row.hasTransport,
+  promoId: row.promoId
+})
+
 function derive(row, pastDue) {
   const isPromo = row.promoIndex != null
   const due = promoMonthCollection({ promoIndex: row.promoIndex, promoTotalAmount: row.promoTotalAmount, monthAmount: row.amount }).due
@@ -100,20 +129,10 @@ function derive(row, pastDue) {
   const expected = isPaid ? num(row.paidAmount) : row.paymentStatus === 'prepaid' ? 0 : due
   // Facturación: cada mes se factura por su propio servicio (CLAUDE.md). Un mes de
   // promo factura su cuota del mes con el descuento, nunca el paquete; un mes
-  // normal factura lo cobrado si ya se cobró (invoiceAmounts.js).
-  const billable = isPromo
-    ? row.amount
-    : billableTotal({ paymentStatus: row.paymentStatus, paidAmount: row.paidAmount, liveAmount: row.amount })
-  const lines = isPromo
-    ? { attGross: Math.round(row.attendanceGross), transGross: Math.round(row.transportGross) }
-    : prorateInvoiceLines({
-      paymentStatus: row.paymentStatus,
-      paidAmount: row.paidAmount,
-      liveAttGross: row.attendanceGross,
-      liveTransGross: row.transportGross,
-      hasTransport: row.hasTransport
-    })
-  const block = blockOf(row)
+  // normal factura lo cobrado si ya se cobró (invoiceAmounts.js, igual que biller).
+  const billable = billableTotal({ paymentStatus: row.paymentStatus, paidAmount: row.paidAmount, liveAmount: row.amount, promoId: row.promoId })
+  const lines = invoiceLinesOf(row)
+  const block = blockOf(row) || (row.invoiceStatus !== 'invoiced' && billable > 0 && lines.attGross <= 0 ? NO_ATTENDANCE : null)
   const awaitingPackage = isPromo && row.promoIndex > 1 && row.paymentStatus === 'pending'
 
   return {
@@ -285,8 +304,11 @@ export function invoicingTotals(rows) {
     // Trabadas (todas, cobradas o no), para el aviso.
     blockedRecord: blocked.filter(r => r.block.family === 'record').length,
     blockedBiller: blocked.filter(r => r.block.family === 'biller').length,
-    blockedCollected: blocked.filter(r => r.isCollected).length,
-    blockedUncollected: blocked.filter(r => !r.isCollected).length,
+    // Las trabadas por la ficha que se liberan al corregir el dato, y las que
+    // además esperan el cobro; los rechazos que esperan el cobro antes de reintentar.
+    blockedRecordCollected: blocked.filter(r => r.block.family === 'record' && r.isCollected).length,
+    blockedRecordUncollected: blocked.filter(r => r.block.family === 'record' && !r.isCollected).length,
+    rejectedUncollected: blocked.filter(r => r.block.family === 'biller' && !r.isCollected).length,
     blockedReasons: [...reasons].map(([chip, n]) => `${n} ${chip}`),
     withWarnings: notIssued.filter(r => r.warnings.length > 0).length
   }

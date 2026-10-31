@@ -1,14 +1,15 @@
 import Card from '../../../../components/ui/Card'
 import InfoButton from '../../explain/InfoButton'
-import { money, pctText, plural } from '../../format'
+import { formatShortDate, money, pctText, plural } from '../../format'
 
 const LABEL = 'text-[10px] font-semibold uppercase tracking-wide text-gray-400'
 const VALUE = 'text-[19px] leading-tight font-semibold tabular-nums mt-1'
 const SUB = 'text-[11px] text-gray-400 mt-0.5'
 
 // Progreso del mes: cuánto hay que cobrar y cuánto entró, o cuánto hay que facturar
-// y cuánto falta emitir. Siempre sobre el padrón entero, no sobre el filtro.
-export default function CfpSummary({ domain, collection: c, invoicing: f }) {
+// y cuánto falta emitir. Siempre sobre el padrón entero, no sobre el filtro. En
+// Facturación, con `issue`, el botón que factura todo lo listo del mes.
+export default function CfpSummary({ domain, collection: c, invoicing: f, issue }) {
   return (
     <Card className="rounded-2xl border-gray-100 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
       <div className="px-5 py-4 flex flex-col gap-3">
@@ -59,34 +60,53 @@ export default function CfpSummary({ domain, collection: c, invoicing: f }) {
             </div>
           </>
         ) : (
-          <div className="w-full grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
-            <div className="pb-4 sm:pb-0 sm:pr-7">
-              <p className={`${LABEL} flex items-center gap-1`}>A facturar del mes <InfoButton id="cfp" /></p>
-              <p className={`${VALUE} text-gray-900`}>{money(f.billable)}</p>
-              <p className={SUB}>con IVA · {plural(f.clients, 'cliente', 'clientes')}, altas incluidas</p>
+          <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+            <div className="w-full grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
+              <div className="pb-4 sm:pb-0 sm:pr-7">
+                <p className={`${LABEL} flex items-center gap-1`}>A facturar del mes <InfoButton id="cfp" /></p>
+                <p className={`${VALUE} text-gray-900`}>{money(f.billable)}</p>
+                <p className={SUB}>con IVA · {plural(f.clients, 'cliente', 'clientes')}, altas incluidas</p>
+              </div>
+              <div className="py-4 sm:py-0 sm:px-7">
+                <p className={`${LABEL} flex items-center gap-1`}>IVA del mes <InfoButton id="monthVat" /></p>
+                <p className={`${VALUE} text-gray-900`}>{money(f.vat)}</p>
+                <p className={SUB}>lo emitido más lo que falta emitir</p>
+              </div>
+              <div className="pt-4 sm:pt-0 sm:pl-7">
+                <p className={LABEL}>Sin emitir</p>
+                <p className={`${VALUE} text-gray-900`}>
+                  {f.notIssued}
+                  <span className="text-gray-300 font-normal"> / {f.clients}</span>
+                </p>
+                {/* Las que faltan, en grupos que no se pisan: lo que se puede emitir ya,
+                    lo que espera el cobro, lo trabado por la ficha y lo rechazado. */}
+                <p className={SUB}>
+                  {f.notIssued === 0 ? 'todo emitido' : [
+                    `${f.ready} ${f.ready === 1 ? 'lista' : 'listas'}`,
+                    f.awaitingPayment > 0 ? `${f.awaitingPayment} sin cobrar` : null,
+                    f.missingRecordData > 0 ? `${f.missingRecordData} con datos faltantes` : null,
+                    f.rejected > 0 ? `${f.rejected} ${f.rejected === 1 ? 'rechazada' : 'rechazadas'} por Biller` : null
+                  ].filter(Boolean).join(' · ')}
+                </p>
+              </div>
             </div>
-            <div className="py-4 sm:py-0 sm:px-7">
-              <p className={`${LABEL} flex items-center gap-1`}>IVA del mes <InfoButton id="monthVat" /></p>
-              <p className={`${VALUE} text-gray-900`}>{money(f.vat)}</p>
-              <p className={SUB}>lo emitido más lo que falta emitir</p>
-            </div>
-            <div className="pt-4 sm:pt-0 sm:pl-7">
-              <p className={LABEL}>Sin emitir</p>
-              <p className={`${VALUE} text-gray-900`}>
-                {f.notIssued}
-                <span className="text-gray-300 font-normal"> / {f.clients}</span>
-              </p>
-              {/* Las que faltan, en grupos que no se pisan: lo que se puede emitir ya,
-                  lo que espera el cobro, lo trabado por la ficha y lo rechazado. */}
-              <p className={SUB}>
-                {f.notIssued === 0 ? 'todo emitido' : [
-                  `${f.ready} ${f.ready === 1 ? 'lista' : 'listas'}`,
-                  f.awaitingPayment > 0 ? `${f.awaitingPayment} sin cobrar` : null,
-                  f.missingRecordData > 0 ? `${f.missingRecordData} con datos faltantes` : null,
-                  f.rejected > 0 ? `${f.rejected} ${f.rejected === 1 ? 'rechazada' : 'rechazadas'} por Biller` : null
-                ].filter(Boolean).join(' · ')}
-              </p>
-            </div>
+            {issue && (
+              <div className="shrink-0 flex flex-col items-start lg:items-end gap-1">
+                <button
+                  type="button"
+                  onClick={issue.onIssueAll}
+                  disabled={issue.count === 0 || !!issue.opensOn || issue.busy}
+                  className="rounded-xl bg-emerald-600 px-5 py-2.5 text-[13px] font-semibold text-white shadow-sm hover:bg-emerald-700 transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Emitir todas las facturas ({issue.count})
+                </button>
+                <p className="text-[11px] text-gray-400">
+                  {issue.opensOn
+                    ? `Se emiten desde el ${formatShortDate(issue.opensOn)}, último día hábil del mes`
+                    : `Con fecha ${formatShortDate(issue.invoiceDate)}, último día hábil del mes`}
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>

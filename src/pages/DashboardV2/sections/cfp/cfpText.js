@@ -1,5 +1,5 @@
 import { formatDecimal, formatShortDate, money, plural } from '../../format'
-import { rowAmount } from '../../../../services/dashboardV2/padron'
+import { isBrokenPackage, rowAmount } from '../../../../services/dashboardV2/padron'
 
 // Textos y chips de cada fila del padrón (Gestión CFP). Las cuentas están en
 // services/dashboardV2/padron.js; acá solo cómo se dicen. Paneles: 'collection'
@@ -99,6 +99,7 @@ export function collectionDetail(r) {
   }
   if (r.paymentStatus === 'prepaid') parts.push('cubierto por el paquete')
   else if (r.awaitingPackage) parts.push('se cobra con el paquete del primer mes')
+  else if (isBrokenPackage(r)) parts.push('la promo figura cobrada pero este mes no: hay que deshacer el paquete para volver a cobrarlo')
   if (r.paymentStatus === 'paid' && r.paymentNotes) parts.push(r.paymentNotes)
   if (isNegotiated(r)) parts.push('monto pactado')
   return parts.join(' · ')

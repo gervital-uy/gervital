@@ -4,7 +4,8 @@ import MonthNavigator from '../../components/ui/MonthNavigator'
 import SectionPlaceholder from './SectionPlaceholder'
 import CfpSection from './sections/cfp/CfpSection'
 import { MonthDataProvider } from './useMonthData'
-import { PLATFORM_START, currentMonthStart } from './monthWindow'
+import { PLATFORM_START, monthStartOf } from './monthWindow'
+import { useToday } from './useToday'
 
 // Pestañas del dashboard v2, en el orden de la maqueta. Cada una pide su feature y
 // abre la primera disponible. `upcoming` describe la sección mientras no está portada;
@@ -60,7 +61,10 @@ export default function DashboardV2() {
 
   const available = useMemo(() => SECTIONS.filter(s => hasAccess(s.feature)), [hasAccess])
   const [tab, setTab] = useState(() => available[0]?.id)
-  const [maxMonth] = useState(currentMonthStart)
+  // El último mes navegable es el en curso, y avanza solo si la pestaña queda
+  // abierta de un mes para el otro.
+  const today = useToday()
+  const maxMonth = useMemo(() => monthStartOf(today), [today])
   const [selected, setSelected] = useState(() => ({ year: maxMonth.getFullYear(), month: maxMonth.getMonth() }))
 
   const active = available.find(s => s.id === tab) || available[0]

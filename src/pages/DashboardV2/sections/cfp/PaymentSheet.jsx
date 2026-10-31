@@ -6,10 +6,10 @@ import { paymentDateError } from '../../../../services/dashboardV2/collect'
 // Registrar el cobro de varias filas con una misma fecha. La fecha es la del
 // depósito, no la de hoy: un pago del 3 registrado el 20 tiene que quedar con su
 // fecha real, o la tasa de cobro del mes miente.
-export default function PaymentSheet({ rows, defaultDate, dateWindow, busy, onCancel, onConfirm }) {
+export default function PaymentSheet({ rows, defaultDate, defaultNote = '', dateWindow, busy, onCancel, onConfirm }) {
   const titleId = useId()
   const [date, setDate] = useState(defaultDate || '')
-  const [note, setNote] = useState('')
+  const [note, setNote] = useState(defaultNote)
   const [error, setError] = useState(null)
   const total = rows.reduce((s, r) => s + r.due, 0)
   const packages = rows.filter(r => r.promoIndex === 1).length

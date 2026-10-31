@@ -2,14 +2,14 @@ import { render, screen, fireEvent, within, waitFor } from '@testing-library/rea
 import CfpSection from './CfpSection'
 import { MonthDataProvider } from '../../useMonthData'
 import { buildPadron } from '../../../../services/dashboardV2/padron'
-import { markMonthPaid, unmarkMonthPaid } from '../../../../services/invoices/invoiceService'
+import { calculateMonthBilling, markMonthPaid, unmarkMonthPaid } from '../../../../services/invoices/invoiceService'
 import { collectPromo, uncollectPromo } from '../../../../services/promotions/promotionService'
 
 jest.mock('react-router-dom', () => ({
   Link: ({ to, children, ...props }) => <a href={to} {...props}>{children}</a>
 }), { virtual: true })
 jest.mock('../../../../services/dashboardV2/queries', () => ({ loadPadron: jest.fn(), getMonthPaymentStates: jest.fn() }))
-jest.mock('../../../../services/invoices/invoiceService', () => ({ markMonthPaid: jest.fn(), unmarkMonthPaid: jest.fn() }))
+jest.mock('../../../../services/invoices/invoiceService', () => ({ markMonthPaid: jest.fn(), unmarkMonthPaid: jest.fn(), calculateMonthBilling: jest.fn() }))
 jest.mock('../../../../services/promotions/promotionService', () => ({ collectPromo: jest.fn(), uncollectPromo: jest.fn() }))
 jest.mock('../../../../utils/date', () => ({ ...jest.requireActual('../../../../utils/date'), todayStr: () => '2026-10-30' }))
 // Permisos reales por rol: un nombre de feature equivocado rompe los tests del ancla.
@@ -43,7 +43,15 @@ const padron = (panel, month = 9) => buildPadron({
 }, { year: 2026, month, today: '2026-10-30' })
 const ROWS = padron(PANEL)
 // Lo que dice la base hoy: lo mismo que el padrón
-const LIVE = new Map(PANEL.map(p => [p.client_id, { client_id: p.client_id, payment_status: p.payment_status, invoice_status: p.invoice_status, promo_id: p.promo_id || null }]))
+const LIVE = new Map(PANEL.map(p => [p.client_id, {
+  client_id: p.client_id, payment_status: p.payment_status, invoice_status: p.invoice_status, promo_id: p.promo_id || null,
+  paid_amount: p.paid_amount ?? null, paid_date: p.paid_date || null, payment_notes: null
+}]))
+// El cálculo en vivo de cada mes, igual al que se cargó
+const liveTotal = id => {
+  const p = PANEL.find(x => x.client_id === id)
+  return { totalChargeableGross: p.attendance_gross + p.transport_gross }
+}
 const paidIn = ids => padron(PANEL.map(p => (ids.includes(p.client_id) ? { ...p, payment_status: 'paid', paid_amount: 30000, paid_date: '2026-10-03' } : p)))
 
 const deferred = () => {
@@ -68,6 +76,7 @@ describe('Gestión CFP: cobros desde la tabla', () => {
     loadPadron.mockReset().mockResolvedValue(ROWS)
     getMonthPaymentStates.mockReset().mockResolvedValue(LIVE)
     markMonthPaid.mockReset().mockResolvedValue({ success: true })
+    calculateMonthBilling.mockReset().mockImplementation(id => Promise.resolve(liveTotal(id)))
     collectPromo.mockReset().mockResolvedValue({ success: true })
     unmarkMonthPaid.mockReset().mockResolvedValue()
     uncollectPromo.mockReset().mockResolvedValue({ success: true })
@@ -268,7 +277,86 @@ describe('Gestión CFP: cobros desde la tabla', () => {
     expect(screen.queryByRole('button', { name: /Registrar cobro/ })).not.toBeInTheDocument()
   })
 
-  test('Facturación sigue de solo lectura', async () => {
+  test('si el monto cambió desde que se cargó la pantalla, no lo cobra', async () => {
+    calculateMonthBilling.mockResolvedValue({ totalChargeableGross: 27000 })
+    await renderSection()
+    setDate('Ana', '2026-10-03')
+    fireEvent.click(within(row('Ana')).getByRole('button', { name: 'Marcar cobrado' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Ana Test: El monto cambió desde que se cargó la pantalla ($ 30.000 → $ 27.000)')
+    expect(markMonthPaid).not.toHaveBeenCalled()
+  })
+
+  test('volver a cobrar conserva las líneas de corrección del cobro deshecho', async () => {
+    const correction = '[05/10/2026] Corrección de cobro: 30000 → 28000 · Admin'
+    getMonthPaymentStates.mockResolvedValue(new Map([...LIVE, ['a', { ...LIVE.get('a'), payment_notes: `${correction}\nefectivo` }]]))
+    await renderSection()
+    fireEvent.click(row('Ana'))
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar cobro (1)' }))
+    const sheet = screen.getByRole('dialog', { name: 'Registrar cobro' })
+    fireEvent.change(within(sheet).getByLabelText(/Nota/), { target: { value: 'transferencia' } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Registrar cobro' }))
+    expect(await screen.findByText('1 cobro registrado.', { exact: false })).toBeInTheDocument()
+    expect(markMonthPaid).toHaveBeenCalledWith('a', 2026, 9, null, null, `${correction}\ntransferencia`, '2026-10-30')
+  })
+
+  test('la nota de la hoja sigue en las filas que fallan y viaja al reintentar', async () => {
+    markMonthPaid.mockImplementationOnce(async () => { throw new Error('se cayó') })
+    await renderSection()
+    fireEvent.click(row('Ana'))
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar cobro (1)' }))
+    const sheet = screen.getByRole('dialog', { name: 'Registrar cobro' })
+    fireEvent.change(within(sheet).getByLabelText(/Nota/), { target: { value: 'transferencia BROU' } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Registrar cobro' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Ana Test: se cayó')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Marcar cobrados (1)' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar cobrados (1)' }))
+    expect(await screen.findByText('1 cobro registrado.', { exact: false })).toBeInTheDocument()
+    expect(markMonthPaid).toHaveBeenLastCalledWith('a', 2026, 9, null, null, 'transferencia BROU', '2026-10-30')
+  })
+
+  test('la hoja no propone una fecha cargada que está fuera de rango', async () => {
+    await renderSection()
+    setDate('Ana', '2026-11-05')
+    fireEvent.click(row('Ana'))
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar cobro (1)' }))
+    expect(within(screen.getByRole('dialog')).getByLabelText(/Fecha del depósito/)).toHaveValue('2026-10-30')
+  })
+
+  test('revertir relee el cobro: si cambió desde otro lado, no lo toca', async () => {
+    getMonthPaymentStates.mockResolvedValue(new Map([...LIVE, ['z', { ...LIVE.get('z'), paid_amount: 58000, paid_date: '2026-10-07' }]]))
+    await renderSection()
+    fireEvent.click(screen.getByRole('button', { name: 'Cobrados' }))
+    fireEvent.click(within(row('Zoe')).getByRole('button', { name: 'Revertir' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Revertir' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Zoe Test: El cobro cambió desde otro lado')
+    expect(uncollectPromo).not.toHaveBeenCalled()
+  })
+
+  test('un paquete roto (la promo cobrada, su primer mes pendiente) se repara deshaciendo el paquete', async () => {
+    const broken = padron(PANEL.map(p => (p.client_id === 'z' ? { ...p, payment_status: 'pending', paid_amount: null, paid_date: null } : p)))
+      .map(r => (r.id === 'z' ? { ...r, promoPaidDate: '2026-10-02' } : r))
+    loadPadron.mockResolvedValue(broken)
+    getMonthPaymentStates.mockResolvedValue(new Map([...LIVE, ['z', { ...LIVE.get('z'), payment_status: 'pending', paid_amount: null, paid_date: null }]]))
+    await renderSection()
+    expect(within(row('Zoe')).queryByRole('button', { name: 'Cobrar paquete' })).not.toBeInTheDocument()
+    expect(row('Zoe')).toHaveTextContent('hay que deshacer el paquete')
+    fireEvent.click(within(row('Zoe')).getByRole('button', { name: 'Deshacer paquete' }))
+    const sheet = screen.getByRole('dialog', { name: 'Deshacer el cobro del paquete' })
+    expect(sheet).toHaveTextContent('se deshizo el cobro solo de este mes desde la ficha')
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Deshacer el paquete' }))
+    expect(await screen.findByText('Se revirtió el cobro de Zoe Test.', { exact: false })).toBeInTheDocument()
+    expect(uncollectPromo).toHaveBeenCalledWith('promo-z')
+  })
+
+  test('un mes facturado sin cobro no se cobra desde acá', async () => {
+    loadPadron.mockResolvedValue(padron(PANEL.map(p => (p.client_id === 'a' ? { ...p, invoice_status: 'invoiced', invoiced_amount: 30000 } : p))))
+    await renderSection()
+    expect(within(row('Ana')).queryByRole('button', { name: 'Marcar cobrado' })).not.toBeInTheDocument()
+    expect(within(row('Ana')).queryByRole('checkbox')).not.toBeInTheDocument()
+  })
+
+  test('sin permiso de facturación, Facturación queda de solo lectura', async () => {
+    mockRole = 'operador'
     await renderSection()
     fireEvent.click(screen.getByRole('button', { name: 'Facturación' }))
     fireEvent.click(screen.getByRole('button', { name: 'Todos' }))

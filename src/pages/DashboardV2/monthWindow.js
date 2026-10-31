@@ -7,6 +7,7 @@ import { PLATFORM_START_ISO } from '../../services/dashboardV2/platform'
 // vacíos).
 export const PLATFORM_START = parseDateOnly(PLATFORM_START_ISO)
 
-// Se calcula al montar y no al cargar el módulo: una pestaña abierta de un mes para
-// el otro tiene que poder llegar al mes nuevo.
-export const currentMonthStart = () => startOfMonth(new Date())
+// El primer día del mes de una fecha 'YYYY-MM-DD' (el mes en curso sale de
+// useToday, que se actualiza solo: una pestaña abierta de un mes para el otro
+// tiene que poder llegar al mes nuevo).
+export const monthStartOf = iso => startOfMonth(parseDateOnly(iso))
