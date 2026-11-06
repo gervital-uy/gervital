@@ -115,11 +115,11 @@ e independientes de la v2.
       $0 no se ofrecen para emitir, detener vale en la pausa, resultado de toda la sesión al cerrar el lote sin robar el foco,
       lo que cambió no se reintenta, solo la lista scrollea, textos del aviso de trabadas, biller no da por emitida una
       factura que no pudo guardar).
-- [ ] Fase 5 — Promociones y otros descuentos
-- [ ] Fase 6 — Asistencia
-- [ ] Fase 7 — Comercial
-- [ ] Fase 8 — Finanzas: serie v2 + gráfico principal
-- [ ] Fase 9 — Finanzas: tarjetas
+- [x] Fase 5 — Promociones y otros descuentos (datos e6ccd6a, UI c31fda7; sin Motivo ni Reactivar)
+- [ ] Fase 6 — Asistencia (sigue en diseño: conserva el placeholder)
+- [x] Fase 7 — Comercial (688fe3a; sin el punto accionable B9)
+- [x] Fase 8 — Finanzas: serie v2 + gráfico principal (753a33e)
+- [x] Fase 9 — Finanzas: tarjetas (d0f6682; transporte con el costo plano de choferes por tramo, B12 omitido)
 - [ ] ~~Fase 10 — Opcionales (B3–B15)~~ descartada: la v2 no cambia la base (decisión 2026-10-30)
 
 ---
