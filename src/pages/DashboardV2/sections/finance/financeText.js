@@ -1,5 +1,6 @@
 import { formatCompact } from '../../../../utils/format'
-import { DASH, MINUS, MONTH_FULL, MONTH_SHORT, formatDecimal } from '../../format'
+import { DASH, MINUS, MONTH_FULL, MONTH_SHORT } from '../../format'
+import { DELTA_TEXT, deltaView } from '../../ui/DeltaTag'
 
 // Rótulos y colores de la pestaña Finanzas. Un punto es { year, month } (0-indexed).
 
@@ -37,7 +38,7 @@ export const MARGIN_LINES = [
     key: 'netPct',
     label: 'Neto',
     color: '#065f46',
-    description: 'Lo que queda después de los gastos variables, los extraordinarios, los extras del personal y el aporte jubilatorio de los directores. Antes de IRAE y amortizaciones.'
+    description: 'Lo que queda después de los gastos variables, los extraordinarios, los extras del personal y el aporte jubilatorio de los directores. Ya descuenta los impuestos cargados en Costos (el adelanto de IRAE incluido), y las compras de activo pesan enteras en su mes.'
   }
 ]
 
@@ -91,18 +92,15 @@ export function compactMoney(v) {
   return Math.round(v) < 0 ? `${MINUS}${text}` : text
 }
 
-// Una variación en puntos con su signo: "+1,2 pp", "−3,4 pp".
-export function ppText(v) {
-  if (typeof v !== 'number' || !Number.isFinite(v)) return DASH
-  const digits = formatDecimal(Math.abs(v), 1)
-  return `${v < 0 && digits !== '0,0' ? MINUS : '+'}${digits} pp`
-}
-
 // La variación del resultado contra su comparable, para una etiqueta o una celda:
-// porcentaje si la base es positiva y, si no, la diferencia en pesos.
-export function changeText(c) {
-  if (!c) return null
-  const up = c.diff >= 0
-  if (c.pct != null) return `${up ? '↑' : '↓'}${formatDecimal(Math.abs(c.pct), 0)}%`
-  return `${up ? '+' : MINUS}${compactMoney(Math.abs(c.diff))}`
-}
+// porcentaje si la base es positiva y, si no, la diferencia en pesos. La misma regla
+// que las tarjetas (deltaView): lo que se imprime como cero es "=", en gris.
+export const changeText = c => (c ? deltaView(c).text : null)
+
+// El tono de esa variación ('good', 'bad', 'flat' o 'none'), para pintarla.
+export const changeTone = c => (c ? deltaView(c).tone : 'none')
+
+// Pintura de una variación según su tono: texto, pastilla y relleno SVG.
+export const CHANGE_TEXT = DELTA_TEXT
+export const CHANGE_PILL = { none: 'bg-gray-50 text-gray-300', flat: 'bg-gray-100 text-gray-500', good: 'bg-emerald-50 text-emerald-700', bad: 'bg-rose-50 text-rose-600' }
+export const CHANGE_FILL = { none: '#d1d5db', flat: '#9ca3af', good: '#047857', bad: '#be123c' }

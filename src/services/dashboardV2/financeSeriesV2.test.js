@@ -2,8 +2,9 @@ import {
   splitByLines, linesTotal, financeMonths, panelIncome, cashIncome, providerActiveIn, partitionExtras,
   directorContributionForMonth, monthCosts, buildFinanceSeries, incomeOf, personalOf, operatingOf,
   expensesOf, resultOf, change, marginKpisV2, financeQuadrantsV2, bridgeStepsV2, expensesByCategoryV2,
-  cashAndTaxesV2, lineRevenueV2, breakevenV2, PROVIDERS_TABLE_SINCE
+  cashAndTaxesV2, lineRevenueV2, breakevenV2, shadowedTemplates, templatesForMonth, PROVIDERS_TABLE_SINCE
 } from './financeSeriesV2'
+import { buildPadron, collectionTotals } from './padron'
 import { monthlyCostToCompany, directorContributionAsOf } from '../salaries/salaryCalc'
 
 // Montos con IVA, como los devuelve get_month_collection_panel. month es 0-indexed.
@@ -76,34 +77,45 @@ describe('panelIncome — tres bases que cierran', () => {
     expect(linesTotal(income.accrued, true)).toBe(30000 + 29120 + 32120 + 27000 + 39000)
   })
 
-  test('banco: el paquete entero en el ancla y $0 en el mes cubierto', () => {
-    expect(linesTotal(income.bank, true)).toBe(30000 + 29120 + 96360 + 0 + 39000)
+  test('banco: lo cobrado por lo que entró, el paquete entero en el ancla y $0 en el mes cubierto', () => {
+    // e debía 39.000 y entraron 38.000: cuenta lo que entró
+    expect(linesTotal(income.bank, true)).toBe(30000 + 29120 + 96360 + 0 + 38000)
     expect(linesTotal(income.packageAdvance, true)).toBe(96360 - 32120)
     expect(linesTotal(income.covered, true)).toBe(27000)
-    // banco = devengado + adelanto de paquetes − meses cubiertos, línea por línea
-    expectLinesEqual(income.bank, minus(plus(income.accrued, income.packageAdvance), income.covered))
+    expect(linesTotal(income.paidDiff, true)).toBe(-1000)
+    // banco = devengado + adelanto de paquetes − meses cubiertos + diferencia de cobro
+    expectLinesEqual(income.bank, plus(minus(plus(income.accrued, income.packageAdvance), income.covered), income.paidDiff))
   })
 
-  test('banco = cobrado + pendiente + diferencia de cobro', () => {
+  test('banco = cobrado + pendiente, sin diferencia que explicar', () => {
     expect(linesTotal(income.collected, true)).toBe(30000 + 96360 + 38000)
     expect(linesTotal(income.pending, true)).toBe(29120)
-    // e cobró 1.000 menos de lo que debía
-    expect(linesTotal(income.gap, true)).toBe(1000)
-    expectLinesEqual(income.bank, plus(plus(income.collected, income.pending), income.gap))
+    expectLinesEqual(income.bank, plus(income.collected, income.pending))
   })
 
-  test('cuenta clientes por línea, paquetes y meses cubiertos', () => {
+  test('es el Previsto de Cobranza de Gestión CFP, con IVA y fila por fila', () => {
+    const padron = buildPadron({ panel: SEP_PANEL }, { year: 2026, month: 8, today: '2026-09-20' })
+    expect(linesTotal(income.bank, true)).toBe(collectionTotals(padron).expected)
+    // Un mes cerrado y cobrado entero: no promete plata que no va a entrar
+    const closed = panelIncome(SEP_PANEL.filter(p => p.payment_status !== 'pending'))
+    expect(linesTotal(closed.bank, true)).toBe(linesTotal(closed.collected, true))
+  })
+
+  test('cuenta clientes por línea, paquetes, meses cubiertos y cobros por otro monto', () => {
     expect(income.counts).toEqual({
       rows: 5, clients: 5, attendanceClients: 5, transportClients: 2,
-      paid: 3, pending: 1, packages: 1, packagesCollected: 1, covered: 1
+      paid: 3, pending: 1, paidOff: 1, packages: 1, packagesCollected: 1, covered: 1, awaiting: 0
     })
   })
 
-  test('un mes 2..N que espera el paquete no debe nada propio', () => {
+  test('un mes 2..N que espera el cobro de su paquete no debe nada propio ni está cubierto', () => {
     const waiting = panelIncome([panelRow('x', { promo_index: 2, promo_total_amount: 81000, promo_id: 'p' })])
     expect(linesTotal(waiting.bank, true)).toBe(0)
     expect(waiting.counts.pending).toBe(0)
-    expect(linesTotal(waiting.covered, true)).toBe(30000)
+    expect(linesTotal(waiting.covered, true)).toBe(0)
+    expect(linesTotal(waiting.awaiting, true)).toBe(30000)
+    expect(waiting.counts).toMatchObject({ covered: 0, awaiting: 1 })
+    expectLinesEqual(waiting.bank, minus(waiting.accrued, waiting.awaiting))
   })
 })
 
@@ -190,7 +202,61 @@ describe('gastos — prestadores, extras y aporte de directores', () => {
 
   test('septiembre: la tabla cuenta, los choferes aparte, el aporte y los extras del personal', () => {
     const c = monthCosts(costs, { year: 2026, month: 8, variableRows: [], extraordinaryRows: [{ year: 2026, month: 8, amount: 2000 }] })
-    expect(c).toMatchObject({ providersLegacy: 0, providersTable: 60500, providerCount: 2, drivers: 44000, driverCount: 1, staffExtras: 1700, employeeExtras: 500, directorBps: 34292, directorBpsEstimated: false, contingency: 2000 })
+    expect(c).toMatchObject({ providersLegacy: 0, providersTable: 60500, providerCount: 2, drivers: 44000, driverCount: 1, staffExtras: 1700, employeeExtras: 500, directorBps: 34292, directorBpsEstimated: false, contingency: 2000, providersMissing: false })
+  })
+
+  test('un mes anterior a la tabla sin ningún pago a prestadores tiene el gasto incompleto', () => {
+    expect(monthCosts(costs, { year: 2026, month: 5, variableRows: [], extraordinaryRows: [] }).providersMissing).toBe(true)
+    expect(monthCosts(costs, { year: 2026, month: 7, variableRows: [], extraordinaryRows: [] }).providersMissing).toBe(false)
+  })
+})
+
+describe('plantillas fijas cargadas hacia atrás', () => {
+  // Como en la base: siete gastos variables de julio que en septiembre pasaron a
+  // plantillas con inicio en junio, y la verdulería con otra descripción.
+  const tpl = (over = {}) => ({ amount: 10000, periodMonths: 1, startYear: 2026, startMonth: 5, supplierId: null, createdAt: '2026-09-22T14:00:00+00:00', categoryName: 'Administración', ...over })
+  const insumos = tpl({ description: 'Insumos varios' })
+  const limpieza = tpl({ description: 'Artículos de limpieza', amount: 2500 })
+  const verduleria = tpl({ description: 'Verduleria El Chavo', supplierId: 'chavo', startMonth: 7, createdAt: '2026-09-23T14:00:00+00:00' })
+  const ute = tpl({ description: 'Electricidad (UTE)', amount: 12000, createdAt: '2026-07-06T14:00:00+00:00' })
+  const imm1 = tpl({ description: 'Contribución', supplierId: 'imm', amount: 9000 })
+  const imm2 = tpl({ description: 'Tributos', supplierId: 'imm', amount: 2600 })
+  const templates = [insumos, limpieza, verduleria, ute, imm1, imm2]
+  const variable = (month, description, amount, createdAt, supplierId = null) => ({ year: 2026, month, description, amount, createdAt, supplierId, categoryName: 'Varios' })
+
+  test('en un mes que ya tenía el gasto como variable cuenta la fila variable, no la plantilla', () => {
+    const july = [variable(6, 'Insumos varios', 10000, '2026-07-07T12:00:00+00:00'), variable(6, 'artículos de limpieza ', 3000, '2026-07-07T12:00:00+00:00')]
+    expect([...shadowedTemplates(templates, july, 2026, 6)]).toEqual([insumos, limpieza])
+    const c = monthCosts({ fixedTemplates: templates }, { year: 2026, month: 6, variableRows: july, extraordinaryRows: [] })
+    expect(c.fixedMonthly).toBe(12000 + 9000 + 2600)
+    expect(c.variable).toBe(13000)
+    expect(c).toMatchObject({ fixedShadowedCount: 2, fixedShadowedMonthly: 12500 })
+  })
+
+  test('mismo proveedor con otra descripción: solo si es la única plantilla de ese proveedor', () => {
+    const august = [variable(7, 'Frutas y verduras El Chavo', 12000, '2026-07-21T12:00:00+00:00', 'chavo'), variable(7, 'IMM', 5000, '2026-07-21T12:00:00+00:00', 'imm')]
+    expect([...shadowedTemplates(templates, august, 2026, 7)]).toEqual([verduleria])
+  })
+
+  test('una fila variable cargada después de la plantilla es un gasto aparte: cuentan las dos', () => {
+    const october = [variable(9, 'Verduleria El Chavo', 15934, '2026-10-27T12:00:00+00:00', 'chavo')]
+    expect(shadowedTemplates(templates, october, 2026, 9).size).toBe(0)
+    // Una plantilla cargada antes que el mes: la fila variable no la pisa
+    const julyPower = [variable(6, 'Electricidad (UTE)', 11000, '2026-07-20T12:00:00+00:00')]
+    expect(shadowedTemplates(templates, julyPower, 2026, 6).size).toBe(0)
+  })
+
+  test('un mes sin la fila variable cuenta la plantilla; en caja, igual', () => {
+    expect(templatesForMonth(templates, [], 2026, 5)).toEqual(templates)
+    const july = [variable(6, 'Insumos varios', 10000, '2026-07-07T12:00:00+00:00')]
+    const c = monthCosts({ fixedTemplates: templates }, { year: 2026, month: 6, variableRows: july, extraordinaryRows: [] })
+    expect(c.fixedCash).toBe(c.fixedMonthly)
+  })
+
+  test('gastos por categoría usan la misma regla', () => {
+    const july = { year: 2026, month: 6, variableRows: [variable(6, 'Insumos varios', 10000, '2026-07-07T12:00:00+00:00')], extraordinaryRows: [] }
+    const { total } = expensesByCategoryV2(july, null, [insumos])
+    expect(total).toBe(10000)
   })
 })
 
@@ -229,7 +295,7 @@ const [aug, sep] = series
 describe('buildFinanceSeries y selectores', () => {
   test('ordena por mes y arma cada fila', () => {
     expect(series.map(r => r.month)).toEqual([7, 8])
-    expect(incomeOf(sep, { withIva: true })).toBe(194480)
+    expect(incomeOf(sep, { withIva: true })).toBe(193480)
     expect(incomeOf(sep, { basis: 'accrued', withIva: true })).toBe(157240)
     expect(incomeOf(sep, { basis: 'cash', withIva: true })).toBe(30000)
     expect(incomeOf(sep, { basis: 'bank', line: 'transport', withIva: true })).toBe(5120 + 15360)
@@ -284,10 +350,13 @@ describe('financeQuadrantsV2 — el mes como estado de resultados', () => {
     expect(q.resultPct).toBeCloseTo((q.result / q.income) * 100)
   })
 
-  test('ya entró y falta salen del estado de cada fila', () => {
-    expect(q.collected + q.pending + q.gap).toBe(q.income)
+  test('ya entró y falta salen del estado de cada fila y suman el banco', () => {
+    expect(q.collected + q.pending).toBe(q.income)
+    expect(q.paidOff).toBe(1)
+    expect(q.paidDiff).toBeLessThan(0)
     expect(q.packages).toBe(1)
     expect(q.coveredMonths).toBe(1)
+    expect(q.awaitingMonths).toBe(0)
   })
 
   test('margen promedio: suma de resultados sobre suma de ingresos de la ventana', () => {
@@ -310,7 +379,7 @@ describe('financeQuadrantsV2 — el mes como estado de resultados', () => {
   })
 
   test('con IVA y en base caja', () => {
-    expect(financeQuadrantsV2(series, 2026, 8, { withIva: true }).income).toBe(194480)
+    expect(financeQuadrantsV2(series, 2026, 8, { withIva: true }).income).toBe(193480)
     expect(financeQuadrantsV2(series, 2026, 8, { basis: 'cash' }).income).toBe(incomeOf(sep, { basis: 'cash' }))
   })
 })
@@ -357,9 +426,10 @@ describe('expensesByCategoryV2 — sin personal, contra el mes anterior', () => 
 describe('cashAndTaxesV2 — caja e IVA del mes', () => {
   test('banco, cobrado, pendiente y el IVA del servicio por línea', () => {
     const c = cashAndTaxesV2(sep)
-    expect(c.bank).toBe(194480)
-    expect(c.collected + c.pending + c.gap).toBe(c.bank)
-    expect(c.collectedPct).toBeCloseTo((164360 / 194480) * 100)
+    expect(c.bank).toBe(193480)
+    expect(c.collected + c.pending).toBe(c.bank)
+    expect(c.paidDiff).toBe(-1000)
+    expect(c.collectedPct).toBeCloseTo((164360 / 193480) * 100)
     expect(c.cash).toBe(30000)
     expect(c.cashOwnMonth).toBe(30000)
     // IVA: cada fila con su tasa (asistencia 22%, transporte 10%)

@@ -13,12 +13,16 @@ export default function FinanceKpis({ q, open = false }) {
   const yoyNote = q.yoyRef ? `Comparado con ${longMonth(q.yoyRef)}.` : 'La serie arranca en junio de 2026: no hay año anterior.'
   const a = q.average
   const effect = packageEffect(q)
+  // Un mes de promo sin aporte propio: "cubiertos" si su paquete ya se cobró y "en
+  // paquete" si alguno espera el cobro del paquete (su plata va en el mes ancla).
+  const thinLabel = effect?.awaiting > 0 ? 'en paquete' : 'cubiertos'
   const badge = effect && effect.net !== 0 ? {
-    text: effect.net > 0 ? `paquetes +${compactMoney(effect.net)}` : `cubiertos ${compactMoney(effect.net)}`,
+    text: effect.net > 0 ? `paquetes +${compactMoney(effect.net)}` : `${thinLabel} ${compactMoney(effect.net)}`,
     suffix: effect.pct == null ? null : pctText(effect.pct, 0),
     detail: [
       effect.advance > 0 && `${plural(effect.packages, 'paquete de promo arranca', 'paquetes de promo arrancan')} este mes y ${effect.packages === 1 ? 'trae' : 'traen'} ${money(effect.advance)} de los meses que cubren.`,
       effect.covered > 0 && `${plural(effect.coveredMonths, 'mes ya está cubierto', 'meses ya están cubiertos')} por un paquete cobrado antes: su servicio (${money(effect.covered)}) no aporta acá.`,
+      effect.awaiting > 0 && `${plural(effect.awaitingMonths, 'mes es', 'meses son')} de un paquete que todavía no se cobró: su servicio (${money(effect.awaiting)}) va en el primer mes de su promo, no acá.`,
       'Infla el mes en que arranca el paquete y adelgaza los que cubre, sin que el negocio cambie.'
     ].filter(Boolean).join(' ')
   } : null
@@ -41,7 +45,7 @@ export default function FinanceKpis({ q, open = false }) {
         infoId="finExpenses"
         value={money(q.expenses)}
         secondary={`${pctText(q.expensesPct, 0)} de ingresos`}
-        hint="Fijos mensualizados · con IVA"
+        hint={q.row?.costs?.providersMissing ? 'Fijos mensualizados · con IVA · sin prestadores cargados' : 'Fijos mensualizados · con IVA'}
         deltas={[
           { change: q.deltas.expensesMoM, label: 'vs mes anterior', note: prevNote, invert: true },
           { change: q.deltas.expensesYoY, label: yoyLabel, note: yoyNote, invert: true }
@@ -55,7 +59,7 @@ export default function FinanceKpis({ q, open = false }) {
         secondary={pctText(q.resultPct, 0)}
         secondaryStrong
         secondaryNote="margen"
-        hint={open ? 'Antes de impuestos · mes en curso' : 'Antes de impuestos'}
+        hint={open ? 'Con los impuestos cargados en Costos · mes en curso' : 'Con los impuestos cargados en Costos'}
         deltas={[
           { change: q.deltas.resultMoM, label: 'vs mes anterior', note: prevNote },
           { change: q.deltas.resultYoY, label: yoyLabel, note: yoyNote }
@@ -69,7 +73,7 @@ export default function FinanceKpis({ q, open = false }) {
         secondary={a.pct == null ? null : pctText(a.pct, 0)}
         secondaryStrong
         secondaryNote="margen"
-        hint="Por mes con ingresos"
+        hint={a.incompleteMonths?.length ? `Por mes con ingresos · ${a.incompleteMonths.map(m => shortMonth(m)).join(', ')} sin prestadores` : 'Por mes con ingresos'}
         deltas={[
           { change: a.monthVsAveragePp, label: 'mes vs promedio', unit: 'pp' },
           { change: a.vsPrevWindowPp, label: `vs ${a.months} m anteriores`, unit: 'pp', note: a.vsPrevWindowPp == null ? 'Aparece cuando haya dos ventanas completas para comparar.' : null }

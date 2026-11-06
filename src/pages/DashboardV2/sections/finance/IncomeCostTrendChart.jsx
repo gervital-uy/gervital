@@ -4,8 +4,9 @@ import { niceScale, sameMonthBefore } from '../../../../services/dashboardV2/fin
 import { change } from '../../../../services/dashboardV2/financeSeriesV2'
 import { useElementWidth } from '../../ui/useElementWidth'
 import TipRow from '../../ui/TipRow'
+import ChartTip from '../../ui/ChartTip'
 import { MINUS, money, pctText } from '../../format'
-import { COLORS, axisLabel, changeText, pointLabel } from './financeText'
+import { CHANGE_FILL, CHANGE_TEXT, COLORS, axisLabel, changeText, changeTone, pointLabel } from './financeText'
 
 const ROW_H = 14
 
@@ -127,7 +128,7 @@ export default function IncomeCostTrendChart({ points, axis }) {
                 </text>
               )}
               {richLabels && c && (
-                <text x={x(i)} y={rowY(few ? 2 : 1)} textAnchor="middle" className="font-semibold" style={{ fontSize: 9.5, fill: c.diff >= 0 ? '#047857' : '#be123c' }}>
+                <text x={x(i)} y={rowY(few ? 2 : 1)} textAnchor="middle" className="font-semibold" style={{ fontSize: 9.5, fill: CHANGE_FILL[changeTone(c)] }}>
                   {`vs ${comp.year} ${changeText(c)}`}
                 </text>
               )}
@@ -151,10 +152,7 @@ export default function IncomeCostTrendChart({ points, axis }) {
       </svg>
 
       {focus && (
-        <div
-          className="absolute z-20 pointer-events-none"
-          style={{ left: x(hover), top: padT - 6, transform: `translateX(${x(hover) > w / 2 ? 'calc(-100% - 10px)' : '10px'})` }}
-        >
+        <ChartTip anchor={x(hover)} box={w} top={padT - 6}>
           <div className="bg-white rounded-xl shadow-lg border border-gray-100 px-3 py-2 whitespace-nowrap">
             <p className="text-[11px] font-semibold text-gray-900 mb-1">{pointLabel(focus, axis)}</p>
             <TipRow color={COLORS.income} label="A ingresar al banco" value={money(focus.income)} />
@@ -175,12 +173,12 @@ export default function IncomeCostTrendChart({ points, axis }) {
                   color="transparent"
                   label={`vs ${pointLabel(focusComp, axis)}`}
                   value={changeText(focusChange)}
-                  valueClass={focusChange.diff >= 0 ? 'text-emerald-700' : 'text-rose-600'}
+                  valueClass={CHANGE_TEXT[changeTone(focusChange)]}
                 />
               </div>
             )}
           </div>
-        </div>
+        </ChartTip>
       )}
 
       <div className="sr-only">

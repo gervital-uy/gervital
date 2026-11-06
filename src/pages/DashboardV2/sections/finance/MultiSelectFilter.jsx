@@ -65,12 +65,15 @@ export default function MultiSelectFilter({
 
   return (
     <div className="relative" ref={box}>
+      {/* El texto del botón es lo elegido ("oct", "Ninguno"): el nombre accesible
+          lleva además el título, o un lector de pantalla no sabría de qué filtro es. */}
       <button
         type="button"
         onClick={openMenu}
         disabled={disabled}
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
+        aria-label={summary === title ? title : `${title}: ${summary}`}
         aria-describedby={disabled && disabledReason ? reasonId : undefined}
         title={disabled ? disabledReason : `${title}: se puede elegir más de uno`}
         className={`inline-flex items-center gap-1 text-[11px] font-semibold rounded-lg px-2.5 py-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${

@@ -2,8 +2,8 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { TARGET_MAX, TARGET_MIN, clampTarget, parseTarget, serializeTarget } from '../../../../services/dashboardV2/financeView'
 
 // La meta de margen neto, desde el propio gráfico. La define el centro (depende de qué
-// tiene que cubrir ese margen: IRAE, reposición de activos, deuda, retiros), así que
-// arranca sin definir y nunca se inventa. Mientras el panel está abierto el gráfico
+// tiene que cubrir ese margen: reposición de activos, deuda, retiros, el saldo de
+// IRAE que no cubran los adelantos), así que arranca sin definir y nunca se inventa. Mientras el panel está abierto el gráfico
 // muestra el valor que se está probando (`onPreview`); se guarda solo con Guardar.
 // Cerrar sin guardar vuelve a la meta guardada.
 //   status: 'loading' | 'ready' | 'error'. Con 'error' no se pudo leer la meta
@@ -24,6 +24,13 @@ export default function MarginTargetControl({ value, status, suggestion, onPrevi
     setError(null)
     onPreview(undefined)
   }, [onPreview])
+
+  // Desmontarse descarta lo que se estaba probando: cambiar de vista con el teclado
+  // (sin el clic afuera que cierra el panel) dejaría dibujada una meta que nadie
+  // guardó. Con un ref, para no correr la limpieza cada vez que cambia onPreview.
+  const previewRef = useRef(onPreview)
+  previewRef.current = onPreview
+  useEffect(() => () => previewRef.current(undefined), [])
 
   useEffect(() => {
     if (!open) return
@@ -103,7 +110,7 @@ export default function MarginTargetControl({ value, status, suggestion, onPrevi
         >
           <p id={titleId} className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Meta de margen neto</p>
           <p className="text-[10.5px] text-gray-400 leading-snug mt-1">
-            La define el centro. El margen del tablero va antes de IRAE, amortizaciones y retiros: la meta tiene que dejarles lugar.
+            La define el centro. El margen ya descuenta los impuestos cargados en Costos (el adelanto de IRAE incluido); no descuenta los retiros ni el saldo de IRAE que no cubran los adelantos: la meta tiene que dejarles lugar.
           </p>
 
           <div className="flex items-center gap-2 mt-2.5">
@@ -132,7 +139,7 @@ export default function MarginTargetControl({ value, status, suggestion, onPrevi
               <button
                 type="button"
                 onClick={() => edit(String(suggestion.pct))}
-                title={`El margen neto de los últimos ${suggestion.months} meses cerrados: una meta que sigue al propio desempeño`}
+                title={`El margen neto de los últimos ${suggestion.months} meses cerrados${suggestion.skipped?.length ? ' con el gasto completo' : ''}: una meta que sigue al propio desempeño`}
                 className={optionCls}
               >
                 {`Últimos ${suggestion.months} m · ${suggestion.pct}%`}

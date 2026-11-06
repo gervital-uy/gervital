@@ -17,7 +17,7 @@ import MarginTargetControl from './MarginTargetControl'
 import PeriodTable from './PeriodTable'
 import { useMarginTarget } from './useMarginTarget'
 import { chartExplainContext } from './chartContext'
-import { COLORS, MARGIN_LINES, changeText, longMonth, periodCaption } from './financeText'
+import { CHANGE_PILL, CHANGE_TEXT, COLORS, MARGIN_LINES, changeText, changeTone, longMonth, periodCaption } from './financeText'
 
 const VIEWS = [
   { id: 'money', label: 'Pesos' },
@@ -89,6 +89,7 @@ export default function FinanceChart({ series, selected, onSelectMonth, lastClos
   const margins = marginPoints(rows)
   const focusTrend = trend[trend.length - 1] || null
   const compTrend = focusTrend ? sameMonthBefore(trend, focusTrend) : null
+  const trendChange = compTrend ? change(focusTrend.result, compTrend.result) : null
   const focusMargin = margins[margins.length - 1] || null
   const headline = moneyHeadline(series, selected.year, selected.month)
   const table = isWindow ? [] : periodTable(trend)
@@ -164,7 +165,7 @@ export default function FinanceChart({ series, selected, onSelectMonth, lastClos
                 </span>
                 {headline.change && (
                   <span className="inline-flex items-baseline gap-1.5 shrink-0" title={`${longMonth(headline.prev)} cerró en ${money(headline.prev.result)}`}>
-                    <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-md tabular-nums ${headline.change.diff >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600'}`}>
+                    <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-md tabular-nums ${CHANGE_PILL[changeTone(headline.change)]}`}>
                       {changeText(headline.change)}
                     </span>
                     <span className="text-[11px] text-gray-400">vs {MONTH_SHORT[headline.prev.month]}</span>
@@ -188,11 +189,11 @@ export default function FinanceChart({ series, selected, onSelectMonth, lastClos
                   {pctText(focusTrend.netPct, 0)}
                 </p>
               </div>
-              {compTrend && (
+              {trendChange && (
                 <div className="sm:text-right">
                   <p className={STAT_LABEL}>vs {compTrend.year}</p>
-                  <p className={`text-[18px] leading-none font-semibold tabular-nums mt-1.5 ${focusTrend.result >= compTrend.result ? 'text-emerald-700' : 'text-rose-600'}`}>
-                    {changeText(change(focusTrend.result, compTrend.result))}
+                  <p className={`text-[18px] leading-none font-semibold tabular-nums mt-1.5 ${CHANGE_TEXT[changeTone(trendChange)]}`}>
+                    {changeText(trendChange)}
                   </p>
                 </div>
               )}

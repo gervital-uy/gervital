@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { niceScale, sameMonthBefore } from '../../../../services/dashboardV2/financeView'
 import { useElementWidth } from '../../ui/useElementWidth'
+import ChartTip from '../../ui/ChartTip'
+import { DELTA_TEXT, deltaView } from '../../ui/DeltaTag'
 import { pctText } from '../../format'
-import { MARGIN_LINES, axisLabel, pointLabel, ppText } from './financeText'
+import { MARGIN_LINES, axisLabel, pointLabel } from './financeText'
 
 const H = 212
 const PAD = { left: 38, right: 10, top: 14, bottom: 26 }
@@ -27,6 +29,8 @@ export default function MarginTrendChart({ points, target, axis }) {
   const comps = points.map(p => sameMonthBefore(points, p))
   const focus = hover != null ? points[hover] : null
   const focusComp = hover != null ? comps[hover] : null
+  // El neto contra la meta: arriba de ella es a favor, como cualquier variación.
+  const targetGap = focus && hasTarget ? deltaView(focus.netPct - target, { unit: 'pp' }) : null
   const band = [
     ...points.map((p, i) => `${x(i)},${y(p.grossPct)}`),
     ...points.map((_, i) => points.length - 1 - i).map(i => `${x(i)},${y(points[i].netPct)}`)
@@ -100,40 +104,33 @@ export default function MarginTrendChart({ points, target, axis }) {
       </svg>
 
       {focus && (
-        <div
-          className="absolute z-20 pointer-events-none"
-          style={{ left: x(hover), top: PAD.top - 6, transform: `translateX(${x(hover) > w / 2 ? 'calc(-100% - 10px)' : '10px'})` }}
-        >
+        <ChartTip anchor={x(hover)} box={w} top={PAD.top - 6}>
           <div className="bg-white rounded-xl shadow-lg border border-gray-100 px-3 py-2 whitespace-nowrap">
             <p className="text-[11px] font-semibold text-gray-900 mb-1">{pointLabel(focus, axis)}</p>
             {/* Cada capa con su margen y, al lado, cuánto se movió contra el mismo mes
                 del año anterior, en puntos porcentuales (no en % de un %). */}
             {MARGIN_LINES.map(l => {
-              const diff = focusComp ? focus[l.key] - focusComp[l.key] : null
+              const diff = focusComp ? deltaView(focus[l.key] - focusComp[l.key], { unit: 'pp' }) : null
               return (
                 <div key={l.key} className="flex items-center gap-2 text-[11px]">
                   <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: l.color }} />
                   <span className="text-gray-400 w-[62px]">{l.label}</span>
                   <span className={`ml-auto font-semibold tabular-nums ${focus[l.key] < 0 ? 'text-rose-600' : 'text-gray-900'}`}>{pctText(focus[l.key], 0)}</span>
-                  {diff != null && (
-                    <span className={`w-[56px] text-right tabular-nums font-semibold ${diff >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>{ppText(diff)}</span>
-                  )}
+                  {diff && <span className={`w-[56px] text-right tabular-nums font-semibold ${DELTA_TEXT[diff.tone]}`}>{diff.text}</span>}
                 </div>
               )
             })}
-            {hasTarget && (
+            {targetGap && (
               <div className="mt-1.5 pt-1.5 border-t border-gray-100 flex items-center gap-2 text-[11px]">
                 <span className="w-1.5 h-1.5" />
                 <span className="text-gray-400 w-[62px]">Meta neto</span>
                 <span className="ml-auto tabular-nums text-gray-500">{`${target}%`}</span>
-                <span className={`w-[56px] text-right tabular-nums font-semibold ${focus.netPct >= target ? 'text-emerald-700' : 'text-rose-600'}`}>
-                  {ppText(focus.netPct - target)}
-                </span>
+                <span className={`w-[56px] text-right tabular-nums font-semibold ${DELTA_TEXT[targetGap.tone]}`}>{targetGap.text}</span>
               </div>
             )}
             {focusComp && <p className="text-[10px] text-gray-300 mt-1.5">variación contra {pointLabel(focusComp, axis)}</p>}
           </div>
-        </div>
+        </ChartTip>
       )}
 
       <div className="sr-only">

@@ -159,6 +159,12 @@ describe('escala', () => {
     expect(moneyScale(points, { result: false }).min).toBe(0)
     expect(moneyScale(points, { attendance: false, transport: false, result: false }).max).toBe(100000)
   })
+
+  test('sin nada que dibujar queda solo el cero, no un eje "1, 1, 1, 0, 0"', () => {
+    const off = { attendance: false, transport: false, operating: false, personal: false, result: false }
+    expect(moneyScale([]).ticks).toEqual([0])
+    expect(moneyScale(SERIES.map(moneyPoint), off).ticks).toEqual([0])
+  })
 })
 
 describe('meta de margen neto', () => {
@@ -183,8 +189,23 @@ describe('meta de margen neto', () => {
 
   test('la meta sugerida acumula hasta 12 meses cerrados y recién ahí divide', () => {
     const s = suggestedTarget(SERIES, 2026, 7)
-    expect(s).toMatchObject({ months: 3, income: 235000, result: 203000, pct: 86, from: ym(2026, 5), to: ym(2026, 7) })
+    expect(s).toMatchObject({ months: 3, income: 235000, result: 203000, pct: 86, from: ym(2026, 5), to: ym(2026, 7), skipped: [] })
     expect(suggestedTarget(SERIES, 2026, 4)).toBeNull()
+  })
+
+  test('deja afuera un mes sin pagos a prestadores cargados: su margen no fue real', () => {
+    // La prestadora recién se carga en julio: junio queda sin ese costo
+    const late = buildFinanceSeries([
+      source(5, [row('a'), row('b')]),
+      source(6, [row('a'), row('b', { transport_gross: 11000 })]),
+      source(7, [row('a'), row('b'), row('c', { ...PROMO, promo_index: 1 })])
+    ], { ...COSTS, providers: [{ ...COSTS.providers[0], createdAt: '2026-07-01T12:00:00Z' }] })
+    expect(late[0].costs.providersMissing).toBe(true)
+    const s = suggestedTarget(late, 2026, 7)
+    expect(s).toMatchObject({ months: 2, from: ym(2026, 6), to: ym(2026, 7), skipped: [ym(2026, 5)] })
+    expect(s.income).toBe(60000 + 125000)
+    // El margen promedio no lo deja afuera, pero lo nombra
+    expect(financeQuadrantsV2(late, 2026, 7, KPI_OPTIONS).average.incompleteMonths).toEqual([ym(2026, 5)])
   })
 })
 
@@ -195,8 +216,13 @@ describe('paquetes de promo en el KPI', () => {
     expect(packageEffect(q(7))).toMatchObject({ advance: 50000, covered: 0, net: 50000, packages: 1 })
   })
 
-  test('el mes cubierto resta su servicio', () => {
-    expect(packageEffect(q(8))).toMatchObject({ advance: 0, covered: 25000, net: -25000, coveredMonths: 1 })
+  test('el mes 2 de una promo sin cobrar espera su paquete: no está cubierto', () => {
+    expect(packageEffect(q(8))).toMatchObject({ advance: 0, covered: 0, awaiting: 25000, net: -25000, awaitingMonths: 1 })
+  })
+
+  test('con el paquete cobrado, el mes 2 está cubierto y resta su servicio', () => {
+    const paid = buildFinanceSeries([source(8, [row('a'), row('c', { ...PROMO, promo_index: 2, payment_status: 'prepaid', paid_amount: 0 })])], COSTS)
+    expect(packageEffect(financeQuadrantsV2(paid, 2026, 8, KPI_OPTIONS))).toMatchObject({ covered: 25000, awaiting: 0, net: -25000, coveredMonths: 1 })
   })
 
   test('un mes sin promos no lleva marca', () => {

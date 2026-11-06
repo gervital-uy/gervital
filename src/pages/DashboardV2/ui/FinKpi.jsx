@@ -22,7 +22,7 @@ export default function FinKpi({
         </p>
 
         <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-          <div className="flex items-center gap-2 whitespace-nowrap">
+          <div className="flex items-center gap-2 whitespace-nowrap min-w-0">
             <span className={`text-[21px] leading-none font-semibold tracking-tight tabular-nums ${valueClass}`}>{value ?? DASH}</span>
             {secondary && (secondaryStrong ? (
               <>
@@ -33,7 +33,7 @@ export default function FinKpi({
                 </span>
               </>
             ) : (
-              <span className="text-[12.5px] font-medium text-gray-400">· {secondary}</span>
+              <span className="text-[12.5px] font-medium text-gray-400 truncate">· {secondary}</span>
             ))}
           </div>
           {deltas.length > 0 && (

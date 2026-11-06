@@ -1,4 +1,5 @@
-import { DASH, money, pctText, plural } from '../../format'
+import { DASH, MONTH_SHORT, money, monthLabelOf, pctText, plural } from '../../format'
+import { deltaView } from '../../ui/DeltaTag'
 
 // Explicaciones de Finanzas. Dos contextos:
 //   · la sección (KPIs del mes): ctx = { finance: { q, open }, monthLabel }, con q de
@@ -8,13 +9,38 @@ import { DASH, money, pctText, plural } from '../../format'
 // Todo sin IVA y sobre "A ingresar al banco", salvo donde se dice otra cosa.
 
 const neg = v => (typeof v === 'number' ? -v : undefined)
-// El operador de una fila que puede ir para los dos lados: '−' si resta.
-const signOp = v => (typeof v === 'number' && v < 0 ? '−' : '+')
 const pp = v => (typeof v === 'number' && Number.isFinite(v) ? `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(1).replace('.', ',')} pp` : DASH)
 
 const BASE_RULE = 'Cada línea va sin su IVA: asistencia ÷ 1,22 y transporte ÷ 1,10. El IVA se cobra para la DGI: no es ingreso del centro.'
 const EXPENSES_IVA = 'Los gastos van con el IVA adentro, porque la plataforma no separa el IVA de las compras; el ingreso va sin IVA. El resultado real es algo mejor que el que se ve.'
-const PROVIDERS_RULE = 'La tabla de prestadores no guarda desde y hasta cuándo trabajó cada uno: cuenta desde el mes en que se cargó, con su monto de hoy, así que en meses pasados es una aproximación. Antes de septiembre de 2026 sus pagos se cargaban como extraordinarios sueltos y cuentan como prestadores, una sola vez.'
+const PROVIDERS_RULE = 'La tabla de prestadores no guarda desde y hasta cuándo trabajó cada uno: cuenta desde el mes en que se cargó, con su monto de hoy, así que en meses pasados es una aproximación. Antes de septiembre de 2026 sus pagos se cargaban como extraordinarios sueltos de Sueldos: los que hay cuentan como prestadores, una sola vez, y un mes sin ninguno cargado queda sin ese costo.'
+const TAXES_RULE = 'Ya descuenta los impuestos cargados como gasto en Costos (Impuestos y cargas fiscales, con el adelanto mensual de IRAE): no hay que volver a restarlos.'
+const DELTA_RULE = 'Las variaciones de la tarjeta comparan contra el mes anterior y contra el mismo mes del año anterior (recién desde junio de 2027): en porcentaje si la base es positiva y, si es cero o negativa, la diferencia en pesos, porque un porcentaje sobre una base así engaña. Lo que redondeado da cero se muestra "=".'
+
+// Un mes sin pagos a prestadores cargados (jun de 2026): el gasto está incompleto.
+const missingProviders = name => `En ${name} no hay ningún pago a prestadores cargado (ni en la tabla ni como extraordinario suelto de Sueldos): el gasto de ese mes está incompleto y su resultado sale más alto de lo que fue.`
+const monthNames = list => (list || []).map(m => `${MONTH_SHORT[m.month]} ${m.year}`).join(', ')
+const signedMoney = v => (typeof v === 'number' && Math.round(v) > 0 ? `+${money(v)}` : money(v))
+
+// Las variaciones de una tarjeta como filas que aclaran (no suman): el valor de
+// referencia y la diferencia, solo las que existen (junio de 2026 no tiene mes
+// anterior). key: 'income' | 'expenses' | 'result', las de q.deltas.
+function deltaRows(q, key) {
+  return [
+    { c: q?.deltas?.[`${key}MoM`], ref: q?.prev, what: 'Mes anterior' },
+    { c: q?.deltas?.[`${key}YoY`], ref: q?.yoyRef, what: 'Mismo mes del año anterior' }
+  ].filter(r => r.c && r.ref).flatMap(({ c, ref, what }) => {
+    const name = monthLabelOf(ref.year, ref.month)
+    return [
+      { label: `${what}: ${name}`, value: c.base, info: true },
+      {
+        label: `Variación contra ${name}`,
+        text: c.pct == null ? `${signedMoney(c.diff)} (base cero o negativa: va en pesos)` : `${signedMoney(c.diff)} · ${deltaView(c).text}`,
+        info: true
+      }
+    ]
+  })
+}
 
 const financeDocs = {
   finIncome: ({ finance, monthLabel = 'el mes' }) => {
@@ -22,16 +48,18 @@ const financeDocs = {
     return {
       title: 'A ingresar al banco',
       unit: ['sin IVA', 'a ingresar al banco', 'mes seleccionado'],
-      what: 'Lo que el mes tiene que cobrar, sin IVA: lo que ya entró más lo que falta. Es el Previsto de Cobranza de Gestión CFP, fila por fila, sin el IVA de cada línea. El paquete de una promo prepaga entra entero en su primer mes y los meses que cubre aportan $ 0, porque así se cobra.',
+      what: 'Lo que el mes tiene que cobrar, sin IVA: lo que ya entró más lo que falta. Es el Previsto de Cobranza de Gestión CFP, fila por fila, sin el IVA de cada línea: una cuota ya cobrada cuenta por lo que se cobró y una pendiente, por lo que debe. El paquete de una promo prepaga entra entero en su primer mes y los meses que cubre aportan $ 0, porque así se cobra.',
       rows: [
-        { label: 'Ya entró (cuotas del mes cobradas)', value: q.collected },
+        { label: 'Ya entró (cuotas y paquetes del mes cobrados)', value: q.collected },
         { label: 'Falta cobrar', value: q.pending, op: '+' },
-        { label: 'Cobrado por otro monto que el previsto', value: q.gap, op: signOp(q.gap) },
         { label: `Del total, adelanto de ${plural(q.packages ?? 0, 'paquete', 'paquetes')} de promo`, value: q.packageAdvance, info: true },
-        { label: `Servicio de ${plural(q.coveredMonths ?? 0, 'mes cubierto', 'meses cubiertos')} por un paquete (aporta $ 0)`, value: q.covered, info: true }
+        { label: `Servicio de ${plural(q.coveredMonths ?? 0, 'mes cubierto', 'meses cubiertos')} por un paquete ya cobrado (aporta $ 0)`, value: q.covered, info: true },
+        ...(q.awaitingMonths ? [{ label: `Servicio de ${plural(q.awaitingMonths, 'mes que espera', 'meses que esperan')} el cobro de su paquete (aporta $ 0: va en el primer mes de la promo)`, value: q.awaiting, info: true }] : []),
+        ...(q.paidOff ? [{ label: `${plural(q.paidOff, 'cuota cobrada', 'cuotas cobradas')} por otro monto: lo que entró menos lo que hoy se le calcula`, value: q.paidDiff, info: true }] : []),
+        ...deltaRows(q, 'income')
       ],
       total: { label: 'A ingresar al banco (sin IVA)', value: q.income },
-      source: `Una fila por cliente del padrón de ${monthLabel}: el mismo de Gestión CFP, que incluye a quien se dio de baja en el mes mientras tenga algo que pagar. Cada fila aporta lo que hay que cobrarle: la cuota del mes (las altas y los reingresos, proporcional a sus días), el paquete entero si es el primer mes de una promo, o $ 0 si es un mes que un paquete ya cubre. ${BASE_RULE} "Ya entró" es lo cobrado de las filas de este mes, con la fecha de pago que tenga: un pago adelantado a fin del mes anterior cuenta acá.`,
+      source: `Una fila por cliente del padrón de ${monthLabel}: el mismo de Gestión CFP, que incluye a quien se dio de baja en el mes mientras tenga algo que pagar. Cada fila cobrada aporta lo que entró; una sin cobrar, lo que hay que cobrarle: la cuota del mes (las altas, los reingresos y las bajas del mes, proporcional a sus días cobrables), el paquete entero si es el primer mes de una promo, o $ 0 si es un mes que cubre un paquete. ${BASE_RULE} "Ya entró" es lo cobrado de las filas de este mes, con la fecha de pago que tenga: un pago adelantado a fin del mes anterior cuenta acá. ${DELTA_RULE}`,
       caveat: `No es caja: es lo que tiene que entrar. Un mes con paquetes de promo se ve mejor de lo que fue y los meses que esos paquetes cubren se ven peor, sin que el negocio cambie: por eso la marca al lado del número.${finance?.open ? ' Es el mes en curso: lo que falta cobrar todavía es una expectativa.' : ''}`
     }
   },
@@ -53,28 +81,35 @@ const financeDocs = {
         { label: 'Gastos fijos (mensualizados)', value: o.fixed, op: '+' },
         { label: 'Gastos variables', value: o.variable, op: '+' },
         { label: 'Gastos extraordinarios', value: o.extraordinary, op: '+' },
-        { label: 'Sobre lo que tiene que entrar al banco', text: pctText(q.expensesPct, 0), info: true }
+        { label: 'Sobre lo que tiene que entrar al banco', text: pctText(q.expensesPct, 0), info: true },
+        ...(c.fixedShadowedCount ? [{
+          label: `${plural(c.fixedShadowedCount, 'plantilla fija que no cuenta', 'plantillas fijas que no cuentan')} este mes: el gasto ya estaba cargado como variable`,
+          value: c.fixedShadowedMonthly,
+          info: true
+        }] : []),
+        ...deltaRows(q, 'expenses')
       ],
       total: { label: 'Total gastos', value: q.expenses },
-      source: `Los sueldos salen de Sueldos: el costo mensual para la empresa de cada empleada según su líquido vigente en ${monthLabel} (aportes patronales, aguinaldo y salario vacacional repartidos por mes). Los prestadores, del monto mensual de su ficha. Los extras del personal son los extraordinarios de Sueldos (de una empleada o sueltos), en su mes. Los gastos salen de Costos: los fijos de sus plantillas repartidos en su periodicidad (un pago anual pesa un doceavo por mes); los variables y los extraordinarios, los cargados en el mes.`,
-      caveat: `${PROVIDERS_RULE}${c.directorBpsEstimated ? ' El aporte de directores de este mes todavía no tiene su fila (Costos la crea cuando alguien lo abre): se calcula igual que la crearía, sin guardarla.' : ''} ${EXPENSES_IVA} La vista Pesos del gráfico pone los fijos en su mes de pago, así que su resultado no es el de estas tarjetas.`
+      source: `Los sueldos salen de Sueldos: el costo mensual para la empresa de cada empleada según su líquido vigente en ${monthLabel} (aportes patronales, aguinaldo y salario vacacional repartidos por mes). Los prestadores, del monto mensual de su ficha. Los extras del personal son los extraordinarios de Sueldos (de una empleada o sueltos), en su mes. Los gastos salen de Costos: los fijos de sus plantillas repartidos en su periodicidad (un pago anual pesa un doceavo por mes); los variables y los extraordinarios, los cargados en el mes. Una plantilla cargada con un inicio anterior a su carga no cuenta en un mes que ya tenía ese gasto como variable (cargado antes que la plantilla, con la misma descripción o el mismo proveedor): cuenta la fila variable, que es lo que se pagó, y el gasto no entra dos veces. ${DELTA_RULE} Acá subir es en contra: un aumento va en rojo.`,
+      caveat: `${c.providersMissing ? `${missingProviders(monthLabel)} ` : ''}${PROVIDERS_RULE}${c.directorBpsEstimated ? ' El aporte de directores de este mes todavía no tiene su fila (Costos la crea cuando alguien lo abre): se calcula igual que la crearía, sin guardarla.' : ''} ${EXPENSES_IVA} La vista Pesos del gráfico pone los fijos en su mes de pago, así que su resultado no es el de estas tarjetas.`
     }
   },
 
-  finResult: ({ finance }) => {
+  finResult: ({ finance, monthLabel = 'el mes' }) => {
     const q = finance?.q || {}
     return {
       title: 'Resultado del mes',
-      unit: ['sin IVA', 'antes de impuestos', 'mes seleccionado'],
+      unit: ['sin IVA', 'con los impuestos cargados en Costos', 'mes seleccionado'],
       what: 'Lo que queda de lo que tiene que entrar al banco después de todos los gastos del mes.',
       rows: [
         { label: 'A ingresar al banco (sin IVA)', value: q.income },
         { label: 'Total gastos', value: neg(q.expenses), op: '−' },
-        { label: 'Margen: resultado ÷ lo que tiene que entrar', text: pctText(q.resultPct, 1), info: true }
+        { label: 'Margen: resultado ÷ lo que tiene que entrar', text: pctText(q.resultPct, 1), info: true },
+        ...deltaRows(q, 'result')
       ],
       total: { label: 'Resultado del mes', value: q.result },
-      source: 'La resta de las dos tarjetas de al lado. Es la misma cuenta que el margen neto de la vista Márgenes, en pesos.',
-      caveat: `Antes de impuestos: la plataforma no registra IRAE ni amortizaciones, así que no es la ganancia final. Las dos puntas no miden lo mismo: el ingreso es lo que tiene que entrar en el mes (con los paquetes de promo enteros en su primer mes) y el gasto es el del mes. ${EXPENSES_IVA}${finance?.open ? ' Es el mes en curso: los gastos variables y extraordinarios se siguen cargando, así que el resultado va a bajar a medida que se carguen.' : ''}`
+      source: `La resta de las dos tarjetas de al lado. Es la misma cuenta que el margen neto de la vista Márgenes, en pesos. ${DELTA_RULE}`,
+      caveat: `${TAXES_RULE} No es la ganancia final: no descuenta el saldo de IRAE que no cubran los adelantos, y una compra de activo pesa entera en su mes, sin amortizar. Las dos puntas no miden lo mismo: el ingreso es lo que tiene que entrar en el mes (con los paquetes de promo enteros en su primer mes) y el gasto es el del mes. ${EXPENSES_IVA}${q.row?.costs?.providersMissing ? ` ${missingProviders(monthLabel)}` : ''}${finance?.open ? ' Es el mes en curso: los gastos variables y extraordinarios se siguen cargando, así que el resultado va a bajar a medida que se carguen.' : ''}`
     }
   },
 
@@ -92,11 +127,12 @@ const financeDocs = {
         { label: 'Lo que tuvo que entrar en la ventana', value: a.sumIncome, info: true },
         { label: 'Margen: resultado acumulado ÷ lo que tuvo que entrar', text: pctText(a.pct, 1), info: true },
         { label: 'Este mes contra el promedio', text: pp(a.monthVsAveragePp), info: true },
-        { label: 'Contra la ventana anterior del mismo largo', text: pp(a.vsPrevWindowPp), info: true }
+        { label: 'Contra la ventana anterior del mismo largo', text: pp(a.vsPrevWindowPp), info: true },
+        ...(a.incompleteMonths?.length ? [{ label: 'Meses de la ventana sin pagos a prestadores cargados', text: monthNames(a.incompleteMonths), info: true }] : [])
       ],
       total: { label: 'Margen promedio', text: `${money(a.resultPerMonth)} por mes · ${pctText(a.pct, 0)}`, check: false },
       source: 'El importe es el resultado de toda la ventana dividido por los meses que tuvieron ingresos. El porcentaje suma lo que tuvo que entrar y los resultados de la ventana y recién ahí divide: promediar los porcentajes de cada mes le daría a un mes flojo el peso de uno lleno. Las dos puntas, como en el Resultado del mes.',
-      caveat: `Las dos variaciones miden cosas distintas: la primera, si este mes estuvo por encima o por debajo de lo normal; la segunda, si el negocio mejoró de fondo, y aparece recién cuando haya dos ventanas completas para comparar. ${a.negativeMonths > 0 ? `${plural(a.negativeMonths, 'mes de la ventana cerró', 'meses de la ventana cerraron')} en rojo y el promedio lo esconde.` : 'Ningún mes de la ventana cerró en rojo.'} Si la ventana incluye el mes en curso, todavía le faltan gastos por cargar.`
+      caveat: `Las dos variaciones miden cosas distintas: la primera, si este mes estuvo por encima o por debajo de lo normal; la segunda, si el negocio mejoró de fondo, y aparece recién cuando haya dos ventanas completas para comparar. ${a.negativeMonths > 0 ? `${plural(a.negativeMonths, 'mes de la ventana cerró', 'meses de la ventana cerraron')} en rojo y el promedio lo esconde.` : 'Ningún mes de la ventana cerró en rojo.'}${a.incompleteMonths?.length ? ` La ventana incluye ${monthNames(a.incompleteMonths)}, sin ningún pago a prestadores cargado: su gasto está incompleto, su resultado sale inflado y sube el promedio.` : ''} Si la ventana incluye el mes en curso, todavía le faltan gastos por cargar.`
     }
   },
 
@@ -159,8 +195,8 @@ const financeDocs = {
         { label: 'Meta de margen neto', text: typeof m.target === 'number' ? `${m.target}%` : 'sin definir', info: true }
       ],
       total: { label: `Margen neto de ${m.name || monthLabel}`, text: pctText(m.netPct, 1) },
-      source: 'Cada capa es un balde real de Sueldos y Costos, sin partir ni estimar nada: sueldos a costo empresa y prestadores en la primera; los gastos fijos mensualizados en la segunda; los variables, los extraordinarios, los extras del personal y el aporte jubilatorio de directores en la tercera. Las tres capas suman el Total gastos y el margen neto es el Resultado del mes dividido lo que tiene que entrar: la misma cuenta.',
-      caveat: 'Antes de IRAE y amortizaciones, que la plataforma no registra: la meta tiene que dejarles lugar. La tercera capa junta cosas distintas (los variables se mueven con la actividad, los extraordinarios son de una vez y el aporte de directores es costo de los dueños): cuando el neto se despega del operativo, conviene ver cuál se movió.'
+      source: 'Cada capa sale de Sueldos y Costos: sueldos a costo empresa y prestadores en la primera; los gastos fijos mensualizados en la segunda; los variables, los extraordinarios, los extras del personal y el aporte jubilatorio de directores en la tercera. Las tres capas suman el Total gastos y el margen neto es el Resultado del mes dividido lo que tiene que entrar: la misma cuenta.',
+      caveat: `Hay piezas aproximadas: los prestadores cuentan desde el mes en que se cargaron, con su monto de hoy, y antes de septiembre de 2026 son los pagos cargados como extraordinarios sueltos${m.providersMissing ? ` (${m.name || monthLabel} no tiene ninguno cargado, así que su margen sale inflado)` : ''}${m.directorEstimated ? '; el aporte de directores de este mes se calcula sin fila guardada' : ''}. Los gastos variables incluyen compras de activo (Inversiones y mejoras del centro), que pesan enteras en su mes: una obra o una compra grande hunde el neto de ese mes sin que la operación cambie. La tercera capa junta cosas distintas (esas compras, los extraordinarios de una vez y el aporte de directores, que es costo de los dueños): cuando el neto se despega del operativo, conviene ver cuál se movió. ${TAXES_RULE}`
     }
   },
 
@@ -176,11 +212,12 @@ const financeDocs = {
         ...(s ? [
           { label: `Resultado de ${s.fromName === s.toName ? s.toName : `${s.fromName} a ${s.toName}`}`, value: s.result, info: true },
           { label: 'Lo que tuvo que entrar en esos meses', value: s.income, info: true },
-          { label: `Margen neto de ${plural(s.months, 'mes cerrado', 'meses cerrados')} (la sugerencia)`, text: pctText(s.exactPct, 1), info: true }
+          { label: `Margen neto de ${plural(s.months, 'mes cerrado', 'meses cerrados')} (la sugerencia)`, text: pctText(s.exactPct, 1), info: true },
+          ...(s.skipped?.length ? [{ label: 'Afuera de la sugerencia, sin pagos a prestadores cargados', text: monthNames(s.skipped), info: true }] : [])
         ] : [])
       ],
-      source: 'Se guarda en la configuración de la plataforma (app_settings), solo cuando se aprieta Guardar; "Sin meta" la deja otra vez sin definir. Mientras el panel está abierto, el gráfico muestra el valor que se está probando. La sugerencia es el margen neto de hasta 12 meses cerrados, sin el mes en curso: acumula lo que tuvo que entrar y los resultados, y recién ahí divide.',
-      caveat: `El margen del tablero va antes de IRAE, amortizaciones y retiros: una meta realista tiene que dejar lugar para todo eso. Es un valor global: cambiarla la cambia para todos los que miran el tablero.${t.persisted === false ? ' No se pudo leer la meta guardada: los cambios de esta sesión solo se prueban en el gráfico, no se guardan.' : ''}`
+      source: 'Se guarda en la configuración de la plataforma (app_settings), solo cuando se aprieta Guardar; "Sin meta" la deja otra vez sin definir. Mientras el panel está abierto, el gráfico muestra el valor que se está probando. La sugerencia es el margen neto de hasta 12 meses cerrados, sin el mes en curso ni los meses con el gasto incompleto (sin ningún pago a prestadores cargado, como junio de 2026): acumula lo que tuvo que entrar y los resultados, y recién ahí divide.',
+      caveat: `El margen del tablero ya descuenta los impuestos cargados en Costos (el adelanto de IRAE incluido); no descuenta los retiros ni el saldo de IRAE que no cubran los adelantos: una meta realista tiene que dejarles lugar. Es un valor global: cambiarla la cambia para todos los que miran el tablero.${t.persisted === false ? ' No se pudo leer la meta guardada: los cambios de esta sesión solo se prueban en el gráfico, no se guardan.' : ''}`
     }
   },
 

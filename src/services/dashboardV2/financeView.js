@@ -149,7 +149,9 @@ export function niceScale(min, max, count = 4) {
 export const MONEY_SERIES = ['attendance', 'transport', 'operating', 'personal', 'result']
 
 // Lo que tiene que entrar en la escala de la vista Pesos: las dos barras apiladas
-// y el resultado, de lo que esté prendido en la leyenda.
+// y el resultado, de lo que esté prendido en la leyenda. Sin nada que dibujar (sin
+// meses, o con toda la leyenda apagada) queda solo la línea del cero: una escala de
+// 0 a 1 en pasos de 0,25 se rotularía "1, 1, 1, 0, 0".
 export function moneyScale(points, active = {}) {
   let max = 0
   let min = 0
@@ -162,6 +164,7 @@ export function moneyScale(points, active = {}) {
       min = Math.min(min, p.result)
     }
   }
+  if (max === 0 && min === 0) return { min: 0, max: 1, ticks: [0] }
   return niceScale(min, max)
 }
 
@@ -188,36 +191,51 @@ export const serializeTarget = v => (typeof v === 'number' && Number.isFinite(v)
 
 // La meta que propone el control: el margen neto de hasta 12 meses que terminan en
 // el último mes cerrado (el mes en curso todavía no tiene cargado todo su gasto).
-// Acumula ingresos y resultados y recién ahí divide.
+// Acumula ingresos y resultados y recién ahí divide. Deja afuera los meses con el
+// gasto incompleto (sin pagos a prestadores cargados, como jun de 2026): sumarían
+// un margen que el centro no tuvo y la meta saldría más alta. `skipped` los nombra.
 export function suggestedTarget(series, year, month) {
   const idx = findMonthIndex(series, year, month)
   if (idx < 0) return null
-  const window = series.slice(Math.max(0, idx - 11), idx + 1).map(trendPoint)
+  const rows = series.slice(Math.max(0, idx - 11), idx + 1)
+  const ym = r => ({ year: r.year, month: r.month })
+  const skipped = rows.filter(r => r.costs?.providersMissing).map(ym)
+  const window = rows.filter(r => !r.costs?.providersMissing).map(trendPoint)
   const income = window.reduce((s, p) => s + p.income, 0)
   if (!(income > 0)) return null
   const result = window.reduce((s, p) => s + p.result, 0)
-  const first = window[0]
-  const last = window[window.length - 1]
   return {
     pct: Math.round((result / income) * 100),
     exactPct: (result / income) * 100,
     months: window.length,
     income,
     result,
-    from: { year: first.year, month: first.month },
-    to: { year: last.year, month: last.month }
+    from: ym(window[0]),
+    to: ym(window[window.length - 1]),
+    skipped
   }
 }
 
 // ── KPI: paquetes de promo ────────────────────────────────────────────────────
 // Lo que las promos le mueven al mes: el adelanto que trae un mes ancla (su paquete
-// menos su propio servicio) y lo que no aportan los meses ya cubiertos. Null si el
-// mes no tiene ninguna de las dos cosas.
+// menos su propio servicio), lo que no aportan los meses cubiertos por un paquete
+// ya cobrado y lo que no aportan los que esperan el cobro de su paquete (esa plata va
+// en el mes ancla, todavía pendiente). Null si el mes no tiene nada de eso.
 export function packageEffect(q) {
   if (!q) return null
   const advance = q.packageAdvance || 0
   const covered = q.covered || 0
-  if (!advance && !covered) return null
-  const net = advance - covered
-  return { advance, covered, net, pct: q.income > 0 ? (net / q.income) * 100 : null, packages: q.packages || 0, coveredMonths: q.coveredMonths || 0 }
+  const awaiting = q.awaiting || 0
+  if (!advance && !covered && !awaiting) return null
+  const net = advance - covered - awaiting
+  return {
+    advance,
+    covered,
+    awaiting,
+    net,
+    pct: q.income > 0 ? (net / q.income) * 100 : null,
+    packages: q.packages || 0,
+    coveredMonths: q.coveredMonths || 0,
+    awaitingMonths: q.awaitingMonths || 0
+  }
 }

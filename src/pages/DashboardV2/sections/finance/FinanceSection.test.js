@@ -137,6 +137,25 @@ describe('Finanzas', () => {
     expect(onSelectMonth).toHaveBeenCalledWith({ year: 2026, month: 8 })
   })
 
+  test('el botón del filtro dice de qué filtro es, no solo lo elegido', async () => {
+    renderSection()
+    await screen.findByText('Total gastos')
+    fireEvent.click(screen.getByRole('button', { name: 'Meses' }))
+    fireEvent.click(screen.getByRole('button', { name: 'jul' }))
+    expect(screen.getByRole('button', { name: 'Meses: jul' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Ninguno' }))
+    expect(screen.getByRole('button', { name: 'Meses: Ninguno' })).toBeInTheDocument()
+  })
+
+  test('un filtro sin meses no dibuja un eje vacío', async () => {
+    renderSection()
+    await screen.findByText('Total gastos')
+    fireEvent.click(screen.getByRole('button', { name: 'Meses' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Ninguno' }))
+    expect(screen.getByText(/no deja ningún mes de la serie/)).toBeInTheDocument()
+    expect(screen.queryByText('Ingresos, gastos y resultado por mes, sin IVA')).not.toBeInTheDocument()
+  })
+
   test('dos o más meses filtrados muestran la tabla de períodos', async () => {
     renderSection()
     await screen.findByText('Total gastos')
@@ -153,6 +172,18 @@ describe('Finanzas', () => {
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByText('Gastos variables')).toBeInTheDocument()
     expect(within(dialog).getByText('$ 80.000')).toBeInTheDocument()
+    // La variación de la tarjeta también se explica: contra qué y por cuánto
+    expect(within(dialog).getByText('Mes anterior: agosto 2026')).toBeInTheDocument()
+    expect(within(dialog).getByText('Variación contra agosto 2026')).toBeInTheDocument()
+  })
+
+  test('A ingresar al banco: lo que ya entró más lo que falta, como Gestión CFP', async () => {
+    renderSection()
+    await screen.findByText('Total gastos')
+    fireEvent.click(kpi('A ingresar al banco').getByRole('button', { name: 'Cómo se calcula' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText(/Es el Previsto de Cobranza de Gestión CFP/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/las bajas del mes, proporcional a sus días cobrables/)).toBeInTheDocument()
   })
 })
 
@@ -201,6 +232,19 @@ describe('Finanzas: meta de margen neto', () => {
     fireEvent.click(within(panel).getByRole('button', { name: 'Cancelar' }))
     expect(setSetting).not.toHaveBeenCalled()
     expect(screen.getByText('meta 15%')).toBeInTheDocument()
+  })
+
+  test('cambiar de vista con el panel abierto descarta lo probado', async () => {
+    getSetting.mockResolvedValue('15')
+    const panel = await openTarget()
+    fireEvent.change(within(panel).getByRole('textbox'), { target: { value: '30' } })
+    expect(screen.getByText('meta 30%')).toBeInTheDocument()
+    // Con el teclado no hay clic afuera que cierre el panel: el control se desmonta abierto
+    fireEvent.click(screen.getByRole('button', { name: 'Pesos' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Márgenes' }))
+    expect(screen.queryByText('meta 30%')).not.toBeInTheDocument()
+    expect(screen.getByText('meta 15%')).toBeInTheDocument()
+    expect(setSetting).not.toHaveBeenCalled()
   })
 
   test('si no se puede leer la meta guardada, el control solo simula', async () => {

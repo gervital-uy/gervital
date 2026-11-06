@@ -1,6 +1,6 @@
 import InfoButton from '../../explain/InfoButton'
 import { DASH, money, pctText } from '../../format'
-import { changeText, pointLabel } from './financeText'
+import { CHANGE_TEXT, changeText, changeTone, pointLabel } from './financeText'
 
 // Comparación de períodos, debajo del gráfico cuando manda el filtro de años y meses:
 // un renglón por período, el más reciente arriba, cada uno contra su mismo mes del
@@ -40,7 +40,7 @@ export default function PeriodTable({ rows }) {
                     {!r.change ? (
                       <span className="text-gray-300">{DASH}</span>
                     ) : (
-                      <span className={`font-semibold ${r.change.diff >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
+                      <span className={`font-semibold ${CHANGE_TEXT[changeTone(r.change)]}`}>
                         {changeText(r.change)}
                         <span className="ml-1 font-normal text-gray-400">vs {r.comp.year}</span>
                       </span>

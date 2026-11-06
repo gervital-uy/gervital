@@ -3,11 +3,15 @@ import { formatCompact } from '../../../../utils/format'
 import { moneyScale } from '../../../../services/dashboardV2/financeView'
 import { useElementWidth } from '../../ui/useElementWidth'
 import TipRow from '../../ui/TipRow'
+import ChartTip from '../../ui/ChartTip'
 import { money } from '../../format'
 import { COLORS, axisLabel, pointLabel } from './financeText'
 
 const PLOT_H = 184
 const LABELS_H = 24
+// La escala fija de la izquierda (w-10) y su separación del gráfico (gap-2).
+const AXIS_W = 40
+const AXIS_GAP = 8
 // Menos de 34 px por mes se vuelve ilegible: con 24 meses en un teléfono, el gráfico
 // se recorre de costado (dentro de su caja, nunca la página).
 const MIN_BAND = 34
@@ -57,8 +61,10 @@ export function smoothPath(points) {
 // mes elegido va lleno y el resto apagado; tocar una barra elige ese mes.
 export default function MoneyChart({ points, selected, onSelect, active, axis }) {
   const [measure, viewport] = useElementWidth()
+  const [measureBox, boxW] = useElementWidth()
   const scrollRef = useRef(null)
   const [hover, setHover] = useState(null)
+  const [scrollLeft, setScrollLeft] = useState(0)
   // Un solo ref para medir y para desplazar; estable, o cada render lo reengancha.
   const setScrollNode = useCallback(node => {
     scrollRef.current = node
@@ -86,13 +92,17 @@ export default function MoneyChart({ points, selected, onSelect, active, axis })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selIdx, band, points.length])
 
+  // Sin meses (un filtro vacío) no hay nada que dibujar: ni ejes ni barras.
+  if (!points.length) return null
+
   const linePoints = active.result ? points.map((p, i) => ({ x: cx(i), y: y(p.result) })) : []
   const tip = hover != null ? points[hover] : null
-  const tipLeft = tip ? cx(hover) < contentW / 2 : true
 
   return (
     <div>
-      <div className="flex gap-2">
+      {/* El globo va afuera de la caja que se recorre de costado (adentro quedaría
+          cortado): se ubica sobre lo que se ve, descontando el desplazamiento. */}
+      <div ref={measureBox} className="relative flex gap-2">
         {/* Escala fija a la izquierda: no se va con el desplazamiento */}
         <div className="relative w-10 shrink-0" style={{ height: PLOT_H }} aria-hidden="true">
           {scale.ticks.map(t => (
@@ -106,6 +116,7 @@ export default function MoneyChart({ points, selected, onSelect, active, axis })
           ref={setScrollNode}
           className="flex-1 min-w-0 overflow-x-auto overflow-y-hidden scrollbar-thin"
           onMouseLeave={() => setHover(null)}
+          onScroll={e => setScrollLeft(e.currentTarget.scrollLeft)}
         >
           <div className="relative" style={{ width: contentW, height: PLOT_H + LABELS_H }}>
             <svg width={contentW} height={PLOT_H} className="absolute left-0 top-0 block overflow-visible" aria-hidden="true">
@@ -189,30 +200,28 @@ export default function MoneyChart({ points, selected, onSelect, active, axis })
               />
             ))}
 
-            {tip && (
-              <div
-                className="absolute z-10 top-0 pointer-events-none"
-                style={tipLeft ? { left: Math.max(4, cx(hover) - 16) } : { right: Math.max(4, contentW - cx(hover) - 16) }}
-              >
-                <div className="bg-white rounded-xl shadow-lg border border-gray-100 px-3 py-2 whitespace-nowrap">
-                  <p className="text-[11px] font-semibold text-gray-900 mb-1">{pointLabel(tip, 'month')}</p>
-                  <TipRow color={COLORS.attendance} label="Asistencia" value={money(tip.attendance)} />
-                  <TipRow color={COLORS.transport} label="Transporte" value={money(tip.transport)} />
-                  <TipRow color={COLORS.personal} label="Personal" value={money(tip.personal)} />
-                  <TipRow color={COLORS.operating} label="Gastos (fijos en caja)" value={money(tip.operating)} />
-                  <div className="mt-1.5 pt-1.5 border-t border-gray-100">
-                    <TipRow
-                      color={COLORS.result}
-                      label="Resultado"
-                      value={money(tip.result)}
-                      valueClass={tip.result < 0 ? 'text-rose-600' : 'text-gray-900'}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </div>
+
+        {tip && (
+          <ChartTip anchor={AXIS_W + AXIS_GAP + cx(hover) - scrollLeft} box={boxW} gap={BAR_W + BAR_GAP + 8}>
+            <div className="bg-white rounded-xl shadow-lg border border-gray-100 px-3 py-2 whitespace-nowrap">
+              <p className="text-[11px] font-semibold text-gray-900 mb-1">{pointLabel(tip, 'month')}</p>
+              <TipRow color={COLORS.attendance} label="Asistencia" value={money(tip.attendance)} />
+              <TipRow color={COLORS.transport} label="Transporte" value={money(tip.transport)} />
+              <TipRow color={COLORS.personal} label="Personal" value={money(tip.personal)} />
+              <TipRow color={COLORS.operating} label="Gastos (fijos en caja)" value={money(tip.operating)} />
+              <div className="mt-1.5 pt-1.5 border-t border-gray-100">
+                <TipRow
+                  color={COLORS.result}
+                  label="Resultado"
+                  value={money(tip.result)}
+                  valueClass={tip.result < 0 ? 'text-rose-600' : 'text-gray-900'}
+                />
+              </div>
+            </div>
+          </ChartTip>
+        )}
       </div>
 
       {/* Los mismos números como tabla, para quien no ve el gráfico */}

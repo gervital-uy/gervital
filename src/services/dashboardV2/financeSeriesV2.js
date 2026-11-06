@@ -16,9 +16,10 @@ import { VAT, monthBounds, netOfGross } from './padron'
 // padrón de Gestión CFP, que incluye a quien después se dio de baja) y de los cobros
 // registrados con fecha en el mes. Tres bases, cada una por línea y con o sin IVA
 // (asistencia al 22%, transporte al 10%, nunca una sola tasa):
-//   · bank     A ingresar al banco, la cifra principal: lo que el mes tiene que
-//              cobrar, con el paquete de una promo entero en su mes ancla y $0 en
-//              los meses que cubre (promoMonthCollection, igual que Cobranza).
+//   · bank     A ingresar al banco, la cifra principal: el Previsto de Cobranza de
+//              Gestión CFP. Una fila cobrada aporta lo que entró (paid_amount); una
+//              sin cobrar, lo que debe, con el paquete de una promo entero en su mes
+//              ancla y $0 en los meses que cubre (promoMonthCollection).
 //   · accrued  Previsto devengado: el servicio del mes, cobrado o no.
 //   · cash     Caja real: lo cobrado por fecha de pago, sea del mes que sea.
 //
@@ -91,14 +92,17 @@ export function financeMonths(todayIso) {
 
 // Ingresos del mes a partir de las filas del panel. Las piezas cierran exacto, línea
 // por línea y con y sin IVA:
-//   bank = accrued + packageAdvance − covered
-//     packageAdvance: lo que el paquete de un mes ancla trae de los meses que cubre
-//     covered: el servicio de los meses 2..N de una promo, que al banco aportan $0
-//   bank = collected + pending + gap
+//   bank = collected + pending
 //     collected: lo cobrado de las filas del mes (paid_amount), sea cual sea la fecha
 //     pending: lo que deben las filas sin cobrar
-//     gap: lo que debía un mes cobrado por otro monto (debido − cobrado: positivo
-//     si entró menos de lo previsto)
+//   bank = accrued + packageAdvance − covered − awaiting + paidDiff
+//     packageAdvance: lo que el paquete de un mes ancla trae de los meses que cubre
+//     covered: el servicio de los meses 2..N de una promo ya cobrada (prepaid), que
+//     al banco aportan $0
+//     awaiting: el servicio de los meses 2..N cuyo paquete todavía no se cobró:
+//     tampoco aportan, su plata va en el paquete del mes ancla
+//     paidDiff: lo que entró en una fila cobrada menos lo que hoy se le calcula
+//     (positivo si entró más; p. ej. un monto ajustado al cobrar)
 export function panelIncome(panel) {
   const accrued = emptyLines()
   const bank = emptyLines()
@@ -106,9 +110,11 @@ export function panelIncome(panel) {
   const pending = emptyLines()
   const packageAdvance = emptyLines()
   const covered = emptyLines()
+  const awaiting = emptyLines()
+  const paidDiff = emptyLines()
   const counts = {
     rows: 0, clients: 0, attendanceClients: 0, transportClients: 0,
-    paid: 0, pending: 0, packages: 0, packagesCollected: 0, covered: 0
+    paid: 0, pending: 0, paidOff: 0, packages: 0, packagesCollected: 0, covered: 0, awaiting: 0
   }
 
   for (const p of panel || []) {
@@ -127,26 +133,36 @@ export function panelIncome(panel) {
     if (trans > 0) counts.transportClients++
 
     addLines(accrued, service)
-    addLines(bank, owed)
-    if (status === 'paid') {
-      counts.paid++
-      addLines(collected, splitByLines(p.paid_amount, att, trans))
-    } else if (status === 'pending') {
+    if (status === 'pending') {
       if (due > 0) counts.pending++
+      addLines(bank, owed)
       addLines(pending, owed)
+    } else {
+      // Cobrada (o cubierta por un paquete cobrado): cuenta lo que entró, como en
+      // Gestión CFP. Un mes prepago entró entero con su ancla: aporta $0.
+      const paid = splitByLines(status === 'paid' ? p.paid_amount : 0, att, trans)
+      if (status === 'paid') {
+        counts.paid++
+        addLines(collected, paid)
+      }
+      addLines(bank, paid)
+      addLines(paidDiff, subLines(paid, owed))
+      if (Math.round(num(status === 'paid' ? p.paid_amount : 0) - due) !== 0) counts.paidOff++
     }
     if (promoIndex === 1) {
       counts.packages++
       if (status === 'paid') counts.packagesCollected++
       addLines(packageAdvance, subLines(owed, service))
+    } else if (promoIndex != null && status === 'pending') {
+      counts.awaiting++
+      addLines(awaiting, service)
     } else if (promoIndex != null) {
       counts.covered++
       addLines(covered, service)
     }
   }
 
-  const gap = subLines(subLines(bank, collected), pending)
-  return { accrued, bank, collected, pending, gap, packageAdvance, covered, counts }
+  return { accrued, bank, collected, pending, paidDiff, packageAdvance, covered, awaiting, counts }
 }
 
 // Caja real del mes: cada cobro (paid_amount) con fecha de pago en el mes, partido
@@ -179,12 +195,52 @@ export function cashIncome(payments, year, month) {
 
 // Desde cuándo existe la tabla de prestadores (migración 078, septiembre de 2026).
 // Antes, sus pagos se cargaban como extraordinarios sin empleado: jul y ago de 2026
-// tienen 114.500 por mes así.
+// tienen 114.500 por mes así, y jun no tiene ninguno.
 export const PROVIDERS_TABLE_SINCE = '2026-09'
 
 const monthOrdOfInstant = iso => {
   const d = parseDateOnly(iso)
   return d ? ord(d.getFullYear(), d.getMonth()) : null
+}
+
+const instantOf = iso => parseDateOnly(iso)?.getTime() ?? null
+const keyOf = (year, month) => `${year}-${String(month + 1).padStart(2, '0')}`
+
+// ── Plantillas fijas cargadas hacia atrás ─────────────────────────────────────
+// Una plantilla de gasto fijo puede arrancar antes del día en que se cargó
+// (created_at), y en esos meses el mismo gasto ya puede estar cargado como variable:
+// jul y ago de 2026 tienen como variables siete gastos (insumos, publicidad,
+// limpieza…) que en septiembre pasaron a plantillas con inicio en junio. Es el mismo
+// problema que el de los prestadores, y se resuelve igual, sin tocar la base: en un
+// mes con una fila variable del mismo gasto cargada ANTES que la plantilla, cuenta la
+// fila variable (lo que se pagó) y la plantilla no. Mismo gasto: la misma descripción
+// o, si no, el mismo proveedor cuando es la única plantilla de ese proveedor (con
+// varias, no se puede saber cuál es). Una fila variable cargada después de la
+// plantilla es un gasto aparte, cargado a sabiendas: cuentan las dos.
+const sameText = (a, b) => {
+  const clean = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase()
+  return clean(a) !== '' && clean(a) === clean(b)
+}
+
+export function shadowedTemplates(fixedTemplates, variableRows, year, month) {
+  const shadowed = new Set()
+  const active = (fixedTemplates || []).filter(t => isActive(t, year, month) && instantOf(t.createdAt) != null)
+  for (const e of variableRows || []) {
+    if (Number(e.year) !== year || Number(e.month) !== month) continue
+    const loaded = instantOf(e.createdAt)
+    if (loaded == null) continue
+    const later = active.filter(t => !shadowed.has(t) && loaded < instantOf(t.createdAt))
+    const bySupplier = e.supplierId ? later.filter(t => t.supplierId === e.supplierId) : []
+    const match = later.find(t => sameText(t.description, e.description)) || (bySupplier.length === 1 ? bySupplier[0] : null)
+    if (match) shadowed.add(match)
+  }
+  return shadowed
+}
+
+// Las plantillas que cuentan en el mes: todas menos las que pisa una fila variable.
+export function templatesForMonth(fixedTemplates, variableRows, year, month) {
+  const shadowed = shadowedTemplates(fixedTemplates, variableRows, year, month)
+  return (fixedTemplates || []).filter(t => !shadowed.has(t))
 }
 
 // La tabla de prestadores no guarda vigencia (B6, sin cambiar la base). Un
@@ -245,19 +301,30 @@ export function monthCosts(costs, { year, month, variableRows, extraordinaryRows
   const active = providersForMonth(providers, year, month)
   const drivers = active.filter(isDriver)
   const director = directorContributionForMonth({ rows: extras.director, employees, startKey: directorStart }, year, month)
+  const shadowSet = shadowedTemplates(fixedTemplates, variableRows, year, month)
+  const shadowed = [...shadowSet]
+  const templates = (fixedTemplates || []).filter(t => !shadowSet.has(t))
+  const providersTable = sum(active, p => num(p.monthlyAmount))
+  const providersLegacy = standaloneExtraForMonth(extras.legacyProviders, year, month)
   return {
     salaries: salaryCostForMonth(employees, year, month),
     employeeExtras: employeeExtraForMonth(employees, year, month),
     staffExtras: standaloneExtraForMonth(extras.staff, year, month),
-    providersTable: sum(active, p => num(p.monthlyAmount)),
-    providersLegacy: standaloneExtraForMonth(extras.legacyProviders, year, month),
+    providersTable,
+    providersLegacy,
     providerCount: active.length,
+    // Un mes anterior a la tabla sin ningún pago a prestadores cargado (jun de 2026):
+    // el gasto del mes está incompleto y su resultado sale inflado.
+    providersMissing: keyOf(year, month) < PROVIDERS_TABLE_SINCE && providersTable === 0 && providersLegacy === 0,
     drivers: sum(drivers, p => num(p.monthlyAmount)),
     driverCount: drivers.length,
     directorBps: director.amount,
     directorBpsEstimated: director.estimated,
-    fixedMonthly: fixedMonthlyForMonth(fixedTemplates, year, month),
-    fixedCash: fixedCashForMonth(fixedTemplates, year, month),
+    fixedMonthly: fixedMonthlyForMonth(templates, year, month),
+    fixedCash: fixedCashForMonth(templates, year, month),
+    // Lo que no cuenta de las plantillas cargadas hacia atrás, para la "i".
+    fixedShadowedCount: shadowed.length,
+    fixedShadowedMonthly: fixedMonthlyForMonth(shadowed, year, month),
     variable: sum((variableRows || []).filter(r => Number(r.year) === year && Number(r.month) === month), r => num(r.amount)),
     contingency: contingencyForMonth(extraordinaryRows, year, month)
   }
@@ -279,9 +346,10 @@ export function buildFinanceMonth(sources, costs) {
       cash: cash.cash,
       collected: income.collected,
       pending: income.pending,
-      gap: income.gap,
+      paidDiff: income.paidDiff,
       packageAdvance: income.packageAdvance,
       covered: income.covered,
+      awaiting: income.awaiting,
       cashOtherMonths: cash.otherMonths
     },
     counts: { ...income.counts, ...cash.counts },
@@ -376,6 +444,10 @@ export function marginKpisV2(row, { basis = 'bank' } = {}) {
     extraordinary: o.extraordinary,
     extras: p.extras,
     director: p.director,
+    // Lo aproximado del mes, para la "i": el aporte calculado sin fila (B14) y un
+    // mes sin pagos a prestadores cargados.
+    directorEstimated: !!row.costs?.directorBpsEstimated,
+    providersMissing: !!row.costs?.providersMissing,
     gross,
     operating,
     net,
@@ -403,6 +475,7 @@ export function financeQuadrantsV2(series, year, month, opts = {}) {
   const income = r => incomeOf(r, { basis, withIva })
   const expenses = r => expensesOf(r, { fixedBasis })
   const result = r => income(r) - expenses(r)
+  const ym = r => ({ year: r.year, month: r.month })
 
   const inc = income(row)
   const exp = expenses(row)
@@ -448,17 +521,22 @@ export function financeQuadrantsV2(series, year, month, opts = {}) {
     // (no por la caja del mes: en junio entró plata de junio con fecha de mayo).
     collected: lines('collected'),
     pending: lines('pending'),
-    gap: lines('gap'),
+    paidDiff: lines('paidDiff'),
+    paidOff: row.counts.paidOff,
     packageAdvance: lines('packageAdvance'),
     covered: lines('covered'),
+    awaiting: lines('awaiting'),
     packages: row.counts.packages,
     coveredMonths: row.counts.covered,
+    awaitingMonths: row.counts.awaiting,
     average: {
       pct: averagePct,
       resultPerMonth: operatingMonths ? sumResult / operatingMonths : null,
       months: window.length,
       operatingMonths,
       negativeMonths: window.filter(r => result(r) < 0).length,
+      // Meses de la ventana con el gasto incompleto (sin pagos a prestadores).
+      incompleteMonths: window.filter(r => r.costs?.providersMissing).map(ym),
       sumIncome,
       sumResult,
       monthVsAveragePp: averagePct == null || resultPct == null ? null : resultPct - averagePct,
@@ -523,7 +601,7 @@ export function categoryTotals({ year, month, variableRows, extraordinaryRows },
     entry.value += amount
     entry.byType[type] += amount
   }
-  for (const t of fixedTemplates || []) {
+  for (const t of templatesForMonth(fixedTemplates, variableRows, year, month)) {
     if (fixedBasis === 'cash') {
       if (hitsMonth(t, year, month)) add(t.categoryName, 'fixed', num(t.amount))
     } else if (isActive(t, year, month)) {
@@ -568,8 +646,9 @@ function withChange(value, prev) {
 
 // ── Caja e impuestos ──────────────────────────────────────────────────────────
 // Con IVA: lo que el mes tiene que ingresar al banco, cuánto ya entró y cuánto
-// falta (por el estado de cada fila), la caja real del mes por fecha de pago y el
-// IVA de ventas del mes (el del servicio del mes, que es lo que se factura).
+// falta (por el estado de cada fila: bank = collected + pending), la caja real del
+// mes por fecha de pago y el IVA de ventas del mes (el del servicio del mes, que es
+// lo que se factura).
 export function cashAndTaxesV2(row) {
   if (!row) return null
   const g = key => linesTotal(row.income[key], true)
@@ -585,9 +664,10 @@ export function cashAndTaxesV2(row) {
     collected,
     collectedPct: bank > 0 ? (collected / bank) * 100 : null,
     pending: g('pending'),
-    gap: g('gap'),
+    paidDiff: g('paidDiff'),
     packageAdvance: g('packageAdvance'),
     covered: g('covered'),
+    awaiting: g('awaiting'),
     accrued: g('accrued'),
     cash,
     cashOtherMonths,
