@@ -10,7 +10,7 @@ import { buildPadron, monthEvents, needsProration } from './padron'
 const CLIENT_FIELDS = 'id, firstName, lastName, avatarUrl, documentNumber, email, address, plan, transferResponsible, startDate, deactivationDate, inactivityPeriods'
 const INVOICE_FIELDS = 'clientId, discountPercent, emitError, dgiStatus, correctionPending, isAmountOverridden, paymentNotes, attendanceChargeableGross, transportChargeableGross'
 
-const unwrap = ({ data, error }) => {
+export const unwrap = ({ data, error }) => {
   if (error) throw new Error(error.message)
   return data || []
 }

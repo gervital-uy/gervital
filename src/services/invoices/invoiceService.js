@@ -102,6 +102,8 @@ export async function calculateMonthBilling(clientId, year, month) {
     vacationDays: data.vacationDays,
     recoveryDays: data.recoveryDays,
     chargeableDays: data.chargeableDays,
+    // El mes pactado (4 × frecuencia): la cuota es chargeableDays / daysPerMonth de la tarifa.
+    daysPerMonth: data.daysPerMonth,
     isProrated: data.isProrated,
     hasTransport: data.hasTransport,
     discountPercent: Number(data.discountPercent) || 0,
