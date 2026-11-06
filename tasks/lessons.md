@@ -93,3 +93,12 @@ clientes de caridad y a prueba sumando al ingreso previsto.
   greppea, `| sort` y mirar el MAYOR; nunca `tail -N` sobre un listado sin ordenar.
 - Regla 2: medir SIEMPRE una métrica de control antes y después de tocar una función de
   agregación, y del lado que se supone que NO cambia (acá: previsto), no sólo del que sí.
+
+## Antes de pushear a master, compilar como Vercel: `CI=true`
+Pusheé el dashboard v2 (fases 5-9) con los tests en verde y un `npm run build` local que
+compilaba, y el deploy de Vercel falló: Vercel corre el build con `CI=true` y CRA trata
+ahí cada warning de ESLint como error. Un `useLayoutEffect` sin dependencias que llamaba a
+`setWidth` (`react-hooks/exhaustive-deps`) alcanzó para tirar el deploy. Los tests de jest
+no corren ESLint, así que tampoco lo veían.
+- Regla: antes de cualquier push a master, `CI=true npx craco build` tiene que terminar en
+  "Compiled successfully". Un warning local es un deploy roto.

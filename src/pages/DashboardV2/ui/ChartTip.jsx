@@ -17,10 +17,12 @@ export function tipLeft(anchor, width, box, gap = 10) {
 export default function ChartTip({ anchor, box, top = 0, gap = 10, children }) {
   const ref = useRef(null)
   const [width, setWidth] = useState(0)
+  // Se vuelve a medir cuando puede cambiar el ancho: otro contenido (children es nuevo
+  // en cada render del gráfico) u otro lugar en la caja.
   useLayoutEffect(() => {
     const measured = ref.current?.offsetWidth || 0
     if (measured !== width) setWidth(measured)
-  })
+  }, [children, anchor, box, gap, top, width])
   return (
     <div ref={ref} className="absolute z-20 pointer-events-none" style={{ left: tipLeft(anchor, width, box, gap), top }}>
       {children}
