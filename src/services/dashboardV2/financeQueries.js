@@ -6,6 +6,7 @@ import { getExtraordinaryByMonth } from '../expenses/extraordinaryExpenseService
 import { getSetting } from '../settings/appSettingsService'
 import { monthBounds } from './padron'
 import { unwrap } from './queries'
+import { financeMonths } from './financeSeriesV2'
 
 // Lecturas de la pestaña Finanzas. Todo sale de lo que ya existe en la base: sin
 // funciones, vistas ni tablas nuevas. Se calcula en el navegador. month es 0-indexed.
@@ -64,6 +65,19 @@ export async function getFinanceCosts() {
     getSetting('director_contribution_start')
   ])
   return { employees, extraCosts, providers, fixedTemplates, directorStart }
+}
+
+// Todo lo que lee la pestaña Finanzas: lo de cada mes, desde el lanzamiento hasta
+// { year, month } (el mes en curso), y lo que no depende del mes. Cada mes pide su
+// panel una sola vez; los meses van en paralelo. Si falla uno falla todo: un mes
+// faltante cambiaría el promedio y las variaciones sin avisar.
+export async function loadFinanceData({ year, month }) {
+  const months = financeMonths(monthBounds(year, month).first)
+  const [costs, sources] = await Promise.all([
+    getFinanceCosts(),
+    Promise.all(months.map(m => getFinanceMonthSources(m.year, m.month)))
+  ])
+  return { costs, sources }
 }
 
 // La programación de transporte de un mes: autos por turno y día con sus pasajeros,

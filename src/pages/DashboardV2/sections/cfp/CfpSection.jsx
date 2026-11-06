@@ -6,6 +6,7 @@ import LoadState from '../../ui/LoadState'
 import { ExplainProvider } from '../../explain/ExplainContext'
 import { useInvalidateMonthData, useMonthData } from '../../useMonthData'
 import { useToday } from '../../useToday'
+import { FINANCE_DATA_KEY } from '../../dataKeys'
 import { monthLabelOf, plural } from '../../format'
 import { loadPadron } from '../../../../services/dashboardV2/queries'
 import { collectionTotals, invoicingTotals, sortRows } from '../../../../services/dashboardV2/padron'
@@ -37,6 +38,12 @@ const without = (set, ids) => {
 export default function CfpSection({ selected }) {
   const { hasAccess } = useAuth()
   const invalidate = useInvalidateMonthData()
+  // Un cobro o una factura cambian también lo que muestra Finanzas (lo que entró, lo
+  // que falta): su serie se descarta para que no muestre lo de antes.
+  const afterWrite = () => {
+    invalidate('padron')
+    invalidate(FINANCE_DATA_KEY)
+  }
   const padron = useMonthData('padron', loadPadron, selected)
   const rows = padron.status === 'ready' ? padron.data : null
   const monthLabel = monthLabelOf(selected.year, selected.month)
@@ -163,7 +170,7 @@ export default function CfpSection({ selected }) {
       results = toPay.map(r => ({ id: r.id, ok: false, error: error.message }))
     }
     // Siempre se recarga: un fallo puede venir de un padrón viejo.
-    invalidate('padron')
+    afterWrite()
     setBusy(false)
     setPaying(null)
     if (monthKeyRef.current !== key) return
@@ -195,7 +202,7 @@ export default function CfpSection({ selected }) {
     } catch (error) {
       failed = [{ name, error: error.message }]
     }
-    invalidate('padron')
+    afterWrite()
     setBusy(false)
     setReverting(null)
     if (monthKeyRef.current !== key) return
@@ -243,7 +250,7 @@ export default function CfpSection({ selected }) {
       results = [{ id: row.id, ok: false, error: error.message }]
     }
     // Siempre se recarga: un rechazo deja su motivo guardado.
-    invalidate('padron')
+    afterWrite()
     setBusy(false)
     setIssuing(null)
     reportIssued(results, key)
@@ -403,7 +410,7 @@ export default function CfpSection({ selected }) {
             invoiceDate={batch.invoiceDate}
             excluded={batch.all && rows ? rows.filter(r => r.invoiceStatus !== 'invoiced' && r.billable > 0 && !canIssue(r)).length : 0}
             onRunningChange={setBusy}
-            onRunFinished={() => invalidate('padron')}
+            onRunFinished={afterWrite}
             onClose={closeBatch}
           />
         )}

@@ -10,9 +10,12 @@ jest.mock('react-router-dom', () => ({
 // date-fns/locale es ESM y jest (CRA) no lo transforma; el navegador de meses no es lo
 // que se prueba acá.
 jest.mock('../../components/ui/MonthNavigator', () => () => null)
-// Gestión CFP lee el padrón real; acá alcanza con uno vacío.
+// Gestión CFP lee el padrón real; acá alcanza con uno vacío. Finanzas, una serie vacía.
 jest.mock('../../services/dashboardV2/queries', () => ({ loadPadron: jest.fn() }))
 const { loadPadron } = jest.requireMock('../../services/dashboardV2/queries')
+jest.mock('../../services/dashboardV2/financeQueries', () => ({ loadFinanceData: jest.fn() }))
+const { loadFinanceData } = jest.requireMock('../../services/dashboardV2/financeQueries')
+jest.mock('../../services/settings/appSettingsService', () => ({ getSetting: jest.fn(), setSetting: jest.fn() }))
 
 let mockRole = 'superadmin'
 jest.mock('../../context/AuthContext', () => {
@@ -37,13 +40,16 @@ describe('DashboardV2 — shell', () => {
     expect(await screen.findByText('No hay clientes para cobrar en este mes.')).toBeInTheDocument()
   })
 
-  test('cambiar de pestaña muestra sus tarjetas', () => {
+  test('cambiar de pestaña muestra su sección: Finanzas ya no es un placeholder', async () => {
     loadPadron.mockImplementation(() => new Promise(() => {}))
+    loadFinanceData.mockResolvedValue({ sources: [], costs: {} })
     mockRole = 'superadmin'
     render(<DashboardV2 />)
     fireEvent.click(screen.getByRole('button', { name: 'Finanzas' }))
-    expect(screen.getByText('Punto de equilibrio')).toBeInTheDocument()
+    expect(screen.getByText('Ingresos, gastos y resultado')).toBeInTheDocument()
     expect(screen.queryByText('Cobranza y facturación')).not.toBeInTheDocument()
+    expect(await screen.findByText('Todavía no hay meses con datos.')).toBeInTheDocument()
+    expect(screen.queryByText(/próximamente/)).not.toBeInTheDocument()
   })
 
   test('cada pestaña respeta su feature: admin ve solo Gestión CFP y Asistencia', async () => {

@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext'
 import MonthNavigator from '../../components/ui/MonthNavigator'
 import SectionPlaceholder from './SectionPlaceholder'
 import CfpSection from './sections/cfp/CfpSection'
+import FinanceSection from './sections/finance/FinanceSection'
 import { MonthDataProvider } from './useMonthData'
 import { PLATFORM_START, monthStartOf } from './monthWindow'
 import { useToday } from './useToday'
@@ -21,16 +22,7 @@ const SECTIONS = [
     id: 'finance',
     label: 'Finanzas',
     feature: 'dashboard_financials',
-    upcoming: [
-      { title: 'Evolución', hint: 'Ingresos contra gastos mes a mes, tendencia y cascada de márgenes.' },
-      { title: 'Resultado del mes', hint: 'Ingresos, gastos, resultado y caja, con sus desgloses.' },
-      { title: 'Gastos por categoría', hint: 'Cada categoría con su variación contra el mes anterior.' },
-      { title: 'Caja e impuestos', hint: 'Cuánta plata entró y cuánto IVA corresponde.' },
-      { title: 'Puente de rentabilidad', hint: 'De los ingresos a la ganancia neta, bloque por bloque.' },
-      { title: 'Ingreso por línea', hint: 'Asistencia y transporte por separado.' },
-      { title: 'Transporte por distancia', hint: 'Lo que cobra y lo que cuesta cada banda de distancia.' },
-      { title: 'Punto de equilibrio', hint: 'Cuánto deja cada usuario y cuántos hacen falta.' }
-    ]
+    Component: FinanceSection
   },
   {
     id: 'commercial',
