@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import Card from '../../../../components/ui/Card'
 import { useAuth } from '../../../../context/AuthContext'
 import SectionHeading from '../../ui/SectionHeading'
 import LoadState from '../../ui/LoadState'
 import { ExplainProvider } from '../../explain/ExplainContext'
 import { useInvalidateMonthData, useMonthData } from '../../useMonthData'
 import { useToday } from '../../useToday'
-import { FINANCE_DATA_KEY } from '../../dataKeys'
+import { BENEFITS_DATA_KEY, FINANCE_DATA_KEY } from '../../dataKeys'
 import { monthLabelOf, plural } from '../../format'
 import { loadPadron } from '../../../../services/dashboardV2/queries'
 import { collectionTotals, invoicingTotals, sortRows } from '../../../../services/dashboardV2/padron'
@@ -24,6 +23,7 @@ import RevertSheet from './RevertSheet'
 import ActionOutcome from './ActionOutcome'
 import InvoiceSheet from './InvoiceSheet'
 import InvoiceBatchSheet from './InvoiceBatchSheet'
+import PromotionsBlock from './promotions/PromotionsBlock'
 
 const DOMAINS = [{ id: 'collection', label: 'Cobranza' }, { id: 'invoicing', label: 'Facturación' }]
 
@@ -39,10 +39,12 @@ export default function CfpSection({ selected }) {
   const { hasAccess } = useAuth()
   const invalidate = useInvalidateMonthData()
   // Un cobro o una factura cambian también lo que muestra Finanzas (lo que entró, lo
-  // que falta): su serie se descarta para que no muestre lo de antes.
+  // que falta) y si el paquete de una promo figura cobrado: esos datos se descartan
+  // para que no muestren lo de antes.
   const afterWrite = () => {
     invalidate('padron')
     invalidate(FINANCE_DATA_KEY)
+    invalidate(BENEFITS_DATA_KEY)
   }
   const padron = useMonthData('padron', loadPadron, selected)
   const rows = padron.status === 'ready' ? padron.data : null
@@ -415,19 +417,7 @@ export default function CfpSection({ selected }) {
           />
         )}
 
-        <section className="flex flex-col gap-4">
-          <SectionHeading
-            eyebrow="Gestión CFP"
-            title="Promociones y otros descuentos"
-            hint={`Vigentes en ${monthLabel}`}
-          />
-          <Card className="border-dashed">
-            <div className="flex flex-col items-center justify-center text-center px-6 py-8 min-h-[140px]">
-              <p className="text-sm text-gray-400 max-w-md">Promos prepagas, descuentos puntuales, cobertura del mes e historial.</p>
-              <span className="mt-3 text-[11px] font-medium text-indigo-400 bg-indigo-50 px-2 py-0.5 rounded-full">próximamente</span>
-            </div>
-          </Card>
-        </section>
+        <PromotionsBlock selected={selected} padron={padron} monthLabel={monthLabel} />
       </div>
     </ExplainProvider>
   )

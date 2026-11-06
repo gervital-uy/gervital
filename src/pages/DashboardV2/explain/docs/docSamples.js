@@ -5,6 +5,7 @@ import {
 } from '../../../../services/dashboardV2/financeView'
 import { chartExplainContext } from '../../sections/finance/chartContext'
 import { buildCommercial } from '../../../../services/dashboardV2/commercialView'
+import { benefitHistory, buildBenefits } from '../../../../services/dashboardV2/benefitsView'
 
 // Contextos de muestra para el test de integridad de las explicaciones (solo lo
 // importa docs.test.js). Uno por explicación registrada en index.js:
@@ -181,12 +182,72 @@ const COMMERCIAL_FULL = [
 ]
 const commercialSample = partial => ({ full: COMMERCIAL_FULL, partial: { monthLabel: 'octubre 2026', ...partial } })
 
+// Promociones de octubre 2026: a arranca una promo de 3 meses (paquete cobrado), b
+// cursa el mes 2 de otra, c tiene un descuento escalonado (25% y sigue con 20%), d un
+// 10% sin cálculo del mes (la lista se reconstruye), g un 100% sin cálculo (no suma)
+// y k ninguno, con una promo vieja de jun–ago. e tuvo un 15% en jul–ago, cobrado.
+const bPromo = (id, clientId, [sy, sm], [ey, em], over = {}) => ({
+  id, clientId, firstName: '', lastName: '', discountPercent: 10, discountAmount: 9000, totalAmount: 81000,
+  startYear: sy, startMonth: sm, endYear: ey, endMonth: em, paidDate: null, paidAmount: null, ...over
+})
+const bMonth = (clientId, month, discountPercent, over = {}) => ({
+  clientId, year: 2026, month, discountPercent, promoId: null, paymentStatus: 'pending', attendanceChargeableGross: null, ...over
+})
+const bPaid = att => ({ paymentStatus: 'paid', attendanceChargeableGross: att })
+const bRow = (id, over = {}) => {
+  const row = { id, firstName: id, lastName: 'X', attendanceGross: 30000, transportGross: 0, promoId: null, promoIndex: null, promoTotal: null, promoPercent: null, discountPercent: null, ...over }
+  return { ...row, amount: row.attendanceGross + row.transportGross }
+}
+const bBill = (rate, charged) => ({ attendanceMonthlyRateGross: rate, chargeableDays: 8, daysPerMonth: 8, attendanceChargeableGross: charged })
+const BENEFITS = buildBenefits({
+  padron: [
+    bRow('a', { promoId: 'pA', promoIndex: 1, promoTotal: 3, promoPercent: 10, attendanceGross: 27000 }),
+    bRow('b', { promoId: 'pB', promoIndex: 2, promoTotal: 3, promoPercent: 10, attendanceGross: 27000, transportGross: 5000 }),
+    bRow('c', { discountPercent: 25, attendanceGross: 36000 }),
+    bRow('d', { discountPercent: 10, attendanceGross: 27000 }),
+    bRow('g', { discountPercent: 100, attendanceGross: 0 }),
+    bRow('k')
+  ],
+  promotions: [
+    bPromo('pA', 'a', [2026, 9], [2026, 11], { paidDate: '2026-10-05', paidAmount: 81000 }),
+    bPromo('pB', 'b', [2026, 8], [2026, 10], { paidDate: '2026-09-05', paidAmount: 81000 }),
+    bPromo('pOld', 'k', [2026, 5], [2026, 7], { paidDate: '2026-06-05', paidAmount: 81000 })
+  ],
+  ledger: [
+    bMonth('c', 9, 25), bMonth('c', 10, 20),
+    bMonth('d', 8, 10, bPaid(27000)), bMonth('d', 9, 10),
+    bMonth('g', 9, 100),
+    bMonth('e', 6, 15, bPaid(17000)), bMonth('e', 7, 15, bPaid(17000))
+  ],
+  clients: ['a', 'b', 'c', 'd', 'e', 'g', 'k'].map(id => ({ id, firstName: id, lastName: 'X' })),
+  billing: { a: bBill(30000, 27000), b: bBill(30000, 27000), c: bBill(48000, 36000) },
+  pastBase: { year: 2026, month: 3, clientIds: ['a', 'b', 'k'] }
+}, { year: 2026, month: 9 })
+const benefitsCtx = (from, to) => ({
+  benefits: {
+    kpis: BENEFITS.kpis,
+    history: from == null ? null : benefitHistory(BENEFITS.agreements, { from: { year: 2026, month: from }, to: { year: 2026, month: to }, today: '2026-11-06' }).totals
+  },
+  monthLabel: 'octubre 2026'
+})
+// jun–oct: con meses sin cobrar en el historial; ago: todo cobrado.
+const BENEFITS_HISTORY = [benefitsCtx(5, 9), benefitsCtx(7, 7)]
+const BENEFITS_FULL = [benefitsCtx(), ...BENEFITS_HISTORY]
+const benefitsSample = partial => ({ full: BENEFITS_FULL, partial: { benefits: partial } })
+
 export const DOC_SAMPLES = {
   cfp: {
     full: [{ ...base, domain: 'collection' }, { ...base, domain: 'invoicing' }],
     partial: { domain: 'invoicing', monthLabel: 'octubre 2026' }
   },
   monthVat: { full: base, partial: { cfp: { invoicing: {} } } },
+  benefCoverage: benefitsSample({ kpis: { segments: [], base: 5 } }),
+  benefDiscount: benefitsSample({ kpis: { discount: { total: 1000 } } }),
+  benefPackages: benefitsSample({ kpis: { packages: {} } }),
+  benefRenewals: benefitsSample({ kpis: { renewals: { count: 2 } } }),
+  benefPromos: benefitsSample({}),
+  benefDiscounts: benefitsSample({ history: {} }),
+  benefHistory: { full: BENEFITS_HISTORY, partial: { benefits: { history: { promos: 1 } } } },
   finIncome: { full: [finCtx(5), finCtx(6), finCtx(7, true), finCtx(8), finYoY], partial: { finance: { q: {} } } },
   finExpenses: { full: [finCtx(5), finCtx(6), finCtx(8), finYoY], partial: { finance: { q: { personal: {} } } } },
   finResult: { full: [finCtx(5), finCtx(8), finCtx(7, true), finYoY], partial: { finance: { q: {}, open: true } } },

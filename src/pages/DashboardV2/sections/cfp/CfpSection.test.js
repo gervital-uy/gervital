@@ -38,6 +38,8 @@ const clients = Object.entries(NAMES).map(([id, name]) => ({
 const breakdown = panel.map(p => ({ clientId: p.client_id, frequency: 3, schedule: 'afternoon', hasTransport: false }))
 const ROWS = buildPadron({ panel, clients, breakdown, promotions: [{ id: 'p1', paid_date: '2026-10-05' }] }, { year: 2026, month: 9, today: '2026-10-30' })
 
+// El bloque de promociones carga sus fuentes aparte: acá no es lo que se prueba.
+jest.mock('../../../../services/dashboardV2/benefitsQueries', () => ({ loadBenefitSources: () => new Promise(() => {}) }))
 jest.mock('../../../../services/dashboardV2/queries', () => ({ loadPadron: jest.fn() }))
 jest.mock('../../../../context/AuthContext', () => ({ useAuth: () => ({ hasAccess: () => true }) }))
 const { loadPadron } = jest.requireMock('../../../../services/dashboardV2/queries')

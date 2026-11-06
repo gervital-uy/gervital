@@ -8,6 +8,8 @@ import { collectPromo, uncollectPromo } from '../../../../services/promotions/pr
 jest.mock('react-router-dom', () => ({
   Link: ({ to, children, ...props }) => <a href={to} {...props}>{children}</a>
 }), { virtual: true })
+// El bloque de promociones carga sus fuentes aparte: acá no es lo que se prueba.
+jest.mock('../../../../services/dashboardV2/benefitsQueries', () => ({ loadBenefitSources: () => new Promise(() => {}) }))
 jest.mock('../../../../services/dashboardV2/queries', () => ({ loadPadron: jest.fn(), getMonthPaymentStates: jest.fn() }))
 jest.mock('../../../../services/invoices/invoiceService', () => ({ markMonthPaid: jest.fn(), unmarkMonthPaid: jest.fn(), calculateMonthBilling: jest.fn() }))
 jest.mock('../../../../services/promotions/promotionService', () => ({ collectPromo: jest.fn(), uncollectPromo: jest.fn() }))
