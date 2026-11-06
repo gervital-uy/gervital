@@ -6,3 +6,7 @@ export const FINANCE_DATA_KEY = 'finance'
 // Promociones y otros descuentos (dentro de Gestión CFP): un cobro o una reversión
 // cambian si el paquete de una promo figura cobrado.
 export const BENEFITS_DATA_KEY = 'benefits'
+
+// La programación de transporte de un mes (Finanzas, Transporte por banda): solo la
+// del mes elegido, aparte de la serie.
+export const TRANSPORT_DATA_KEY = 'financeTransport'

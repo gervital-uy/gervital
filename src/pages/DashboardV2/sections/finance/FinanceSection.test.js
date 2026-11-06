@@ -7,12 +7,12 @@ jest.mock('react-router-dom', () => ({
   Link: ({ to, children, ...props }) => <a href={to} {...props}>{children}</a>
 }), { virtual: true })
 
-jest.mock('../../../../services/dashboardV2/financeQueries', () => ({ loadFinanceData: jest.fn() }))
+jest.mock('../../../../services/dashboardV2/financeQueries', () => ({ loadFinanceData: jest.fn(), getTransportMonthSources: jest.fn() }))
 jest.mock('../../../../services/settings/appSettingsService', () => ({ getSetting: jest.fn(), setSetting: jest.fn() }))
 // Hoy fijo: septiembre de 2026 es el mes en curso.
 jest.mock('../../useToday', () => ({ useToday: () => '2026-09-20' }))
 
-const { loadFinanceData } = jest.requireMock('../../../../services/dashboardV2/financeQueries')
+const { loadFinanceData, getTransportMonthSources } = jest.requireMock('../../../../services/dashboardV2/financeQueries')
 const { getSetting, setSetting } = jest.requireMock('../../../../services/settings/appSettingsService')
 
 // Cuatro meses (montos con IVA que netean redondo: 30.500 / 1,22 = 25.000):
@@ -73,8 +73,8 @@ describe('Finanzas', () => {
 
   test('muestra el gráfico y los KPIs con la base bien rotulada, sin "próximamente"', async () => {
     renderSection()
-    expect(await screen.findByText('Ingresos, gastos y resultado')).toBeInTheDocument()
-    expect(screen.getByText('Mes a mes, en pesos')).toBeInTheDocument()
+    expect(await screen.findByText('Mes a mes, en pesos')).toBeInTheDocument()
+    expect(screen.getByText('Ingresos, gastos y resultado')).toBeInTheDocument()
     expect(screen.getByText('Mes en curso')).toBeInTheDocument()
     // sep: 25.000 + 25.000 (pendiente) + 0 del mes cubierto; gastos 10.000 + 1.000 + 80.000
     expect(kpi('A ingresar al banco').getByText('$ 50.000')).toBeInTheDocument()
@@ -184,6 +184,70 @@ describe('Finanzas', () => {
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByText(/Es el Previsto de Cobranza de Gestión CFP/)).toBeInTheDocument()
     expect(within(dialog).getByText(/las bajas del mes, proporcional a sus días cobrables/)).toBeInTheDocument()
+  })
+})
+
+// La programación de transporte de septiembre: un tramo con b (sin distancia cargada)
+// y otro con a, que viaja sin transporte cobrado.
+const TRANSPORT = {
+  year: 2026,
+  month: 8,
+  clients: [{ id: 'a', distanceRange: '0_to_2km' }, { id: 'b', distanceRange: null }],
+  cars: [
+    { date: '2026-09-01', shift: 'morning_arrival', seatCount: 4, clientIds: ['b'] },
+    { date: '2026-09-01', shift: 'afternoon_departure', seatCount: 4, clientIds: ['a'] }
+  ],
+  tripCounts: [{ clientId: 'a', date: '2026-09-01', tripCount: 1 }, { clientId: 'b', date: '2026-09-01', tripCount: 1 }]
+}
+// eslint-disable-next-line testing-library/no-node-access
+const card = title => within(screen.getByRole('heading', { name: new RegExp(title) }).closest('.rounded-2xl'))
+
+describe('Finanzas: tarjetas de análisis', () => {
+  beforeEach(() => {
+    loadFinanceData.mockResolvedValue(DATA)
+    getTransportMonthSources.mockResolvedValue(TRANSPORT)
+    getSetting.mockResolvedValue(null)
+  })
+
+  test('las siete tarjetas del mes, sin "próximamente"', async () => {
+    const { container } = renderSection()
+    await screen.findByText('Gastos por categoría')
+    expect(screen.getByRole('group', { name: 'Personal (sueldos, prestadores y extras)' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Gastos fijos, variables y extraordinarios' })).toBeInTheDocument()
+    expect(screen.getByText('Caja e impuestos')).toBeInTheDocument()
+    for (const title of ['Puente de rentabilidad', 'Ingreso por línea', 'Transporte por banda de distancia', 'Por usuario y punto de equilibrio']) {
+      expect(screen.getByRole('heading', { name: new RegExp(title) })).toBeInTheDocument()
+    }
+    expect(container.textContent).not.toMatch(/pr[oó]ximamente/i)
+  })
+
+  test('los números del mes: categorías, puente y transporte', async () => {
+    renderSection()
+    await screen.findByText('Gastos por categoría')
+    // sep: 80.000 de Alimentación + 1.000 del seguro anual mensualizado
+    expect(card('Gastos por categoría').getByText('$ 81.000')).toBeInTheDocument()
+    // 50.000 − 10.000 de la prestadora − 1.000 − 80.000
+    expect(card('Puente de rentabilidad').getByText('−$ 41.000')).toBeInTheDocument()
+    // b cobra 10.000 sin IVA en julio, pero en septiembre no tiene transporte: el
+    // chofer cuesta 10.000 y no hay ingreso de transporte
+    const transport = await screen.findByText('Ocupación de los autos')
+    expect(transport).toBeInTheDocument()
+    expect(card('Transporte por banda de distancia').getByText('25%')).toBeInTheDocument()
+  })
+
+  test('el transporte se pide solo para el mes elegido', async () => {
+    renderSection()
+    await screen.findByText('Ocupación de los autos')
+    expect(getTransportMonthSources).toHaveBeenCalledTimes(1)
+    expect(getTransportMonthSources).toHaveBeenCalledWith(2026, 8)
+  })
+
+  test('si falla la programación de transporte, el resto se muestra igual', async () => {
+    getTransportMonthSources.mockRejectedValue(new Error('sin conexión'))
+    renderSection()
+    await screen.findByText('Gastos por categoría')
+    expect(await card('Transporte por banda de distancia').findByText('No se pudieron cargar los datos.')).toBeInTheDocument()
+    expect(card('Puente de rentabilidad').getByText('−$ 41.000')).toBeInTheDocument()
   })
 })
 

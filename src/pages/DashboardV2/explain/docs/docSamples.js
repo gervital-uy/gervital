@@ -1,5 +1,7 @@
 import { buildPadron, collectionTotals, invoicingTotals } from '../../../../services/dashboardV2/padron'
 import { buildFinanceSeries, financeQuadrantsV2 } from '../../../../services/dashboardV2/financeSeriesV2'
+import { financeCards } from '../../../../services/dashboardV2/financeCards'
+import { buildTransportEconomics } from '../../../../services/dashboardV2/transportEconomics'
 import {
   KPI_OPTIONS, marginPoints, moneyHeadline, periodRows, periodTable, suggestedTarget, trendPoint
 } from '../../../../services/dashboardV2/financeView'
@@ -54,7 +56,7 @@ const finSource = (month, panel, variable = 0, rows = []) => ({
 })
 const FIN_PROMO = { promo_id: 'p1', promo_total_amount: 91500 }
 const FIN_SUPPLIES = { year: 2026, month: 6, amount: 4000, description: 'Insumos varios', createdAt: '2026-07-10T12:00:00Z', categoryName: 'Insumos' }
-const FIN_SERIES = buildFinanceSeries([
+const FIN_SOURCES = [
   finSource(5, [finRow('a', { paid_amount: 31000 }), finRow('b')]),
   finSource(6, [finRow('a'), finRow('b', { transport_gross: 11000, paid_amount: 40000 })], 0, [FIN_SUPPLIES]),
   finSource(7, [finRow('a'), finRow('b', { payment_status: 'pending', paid_amount: null }), finRow('c', { ...FIN_PROMO, promo_index: 1, paid_amount: 91500 })]),
@@ -64,7 +66,8 @@ const FIN_SERIES = buildFinanceSeries([
     finRow('c', { ...FIN_PROMO, promo_index: 2, payment_status: 'prepaid', paid_amount: 0 }),
     finRow('d', { promo_id: 'p2', promo_total_amount: 61000, promo_index: 2, payment_status: 'pending', paid_amount: null })
   ], 80000)
-], {
+]
+const FIN_COSTS = {
   employees: [],
   extraCosts: [],
   providers: [{ id: 'p', name: 'Ana', role: 'Chofer', monthlyAmount: 10000, active: true, createdAt: '2026-07-01T12:00:00Z' }],
@@ -73,9 +76,35 @@ const FIN_SERIES = buildFinanceSeries([
     { description: 'Insumos varios', amount: 3000, periodMonths: 1, startYear: 2026, startMonth: 5, createdAt: '2026-09-20T12:00:00Z', categoryName: 'Insumos' }
   ],
   directorStart: null
-})
-const finCtx = (month, open = false) => ({
-  finance: { q: financeQuadrantsV2(FIN_SERIES, 2026, month, KPI_OPTIONS), open },
+}
+const FIN_SERIES = buildFinanceSeries(FIN_SOURCES, FIN_COSTS)
+// Transporte de septiembre: dos tramos (uno con dos pasajeros de bandas distintas),
+// un cliente sin distancia y uno que viaja sin transporte cobrado; el chofer es la
+// prestadora Ana. Sin choferes, el costo queda sin dato.
+const FIN_TRANSPORT_SOURCES = {
+  year: 2026,
+  month: 8,
+  panel: [
+    { client_id: 'a', transport_gross: 11000 },
+    { client_id: 'b', transport_gross: 5500 },
+    { client_id: 'c', transport_gross: 0 }
+  ],
+  clients: [{ id: 'a', distanceRange: '2_to_5km' }, { id: 'b', distanceRange: null }, { id: 'c', distanceRange: '0_to_2km' }],
+  cars: [
+    { date: '2026-09-01', shift: 'morning_arrival', seatCount: 4, clientIds: ['a', 'b'] },
+    { date: '2026-09-01', shift: 'afternoon_departure', seatCount: 4, clientIds: ['c'] }
+  ],
+  tripCounts: [{ clientId: 'a', date: '2026-09-01', tripCount: 1 }, { clientId: 'b', date: '2026-09-01', tripCount: 1 }, { clientId: 'c', date: '2026-09-01', tripCount: 1 }]
+}
+const FIN_TRANSPORT = buildTransportEconomics({ ...FIN_TRANSPORT_SOURCES, providers: FIN_COSTS.providers, today: '2026-11-06' })
+const FIN_TRANSPORT_NO_DRIVERS = buildTransportEconomics({ ...FIN_TRANSPORT_SOURCES, providers: [], today: '2026-09-15' })
+const finCtx = (month, open = false, transport = FIN_TRANSPORT) => ({
+  finance: {
+    q: financeQuadrantsV2(FIN_SERIES, 2026, month, KPI_OPTIONS),
+    open,
+    cards: financeCards({ series: FIN_SERIES, sources: FIN_SOURCES, fixedTemplates: FIN_COSTS.fixedTemplates }, { year: 2026, month }, KPI_OPTIONS),
+    transport
+  },
   monthLabel: 'mes de muestra'
 })
 // Septiembre con un año anterior inventado, para las filas interanuales (una con
@@ -270,6 +299,15 @@ export const DOC_SAMPLES = {
     partial: { chart: { target: { suggestion: { fromName: 'junio 2026', toName: 'junio 2026' } } } }
   },
   finPeriods: { full: chartCtx('money', FILTER), partial: { chart: { periods: null } } },
+  finPersonal: { full: [finCtx(5), finCtx(6), finCtx(8)], partial: { finance: { cards: { personal: {} } } } },
+  finOperating: { full: [finCtx(5), finCtx(8)], partial: { finance: { cards: { operating: { parts: [] } } } } },
+  finCategories: { full: [finCtx(5), finCtx(6), finCtx(8)], partial: { finance: { cards: { categories: { rows: [] } } } } },
+  finCash: { full: [finCtx(6), finCtx(7, true), finCtx(8)], partial: { finance: { cards: { cash: {} } } } },
+  finVat: { full: [finCtx(6), finCtx(8)], partial: { finance: { cards: {} } } },
+  finBridge: { full: [finCtx(5), finCtx(8)], partial: { finance: { cards: { bridge: { steps: [] } } } } },
+  finLines: { full: [finCtx(6), finCtx(8)], partial: { finance: { cards: { lines: { attendance: {} } } } } },
+  finTransport: { full: [finCtx(8), finCtx(8, true, FIN_TRANSPORT_NO_DRIVERS)], partial: { finance: { transport: { legs: 2 } } } },
+  finBreakeven: { full: [finCtx(5), finCtx(8)], partial: { finance: { cards: { breakeven: { users: 0 } } } } },
   activeClients: commercialSample({ month: { counts: { opening: 3 } } }),
   mrr: commercialSample({ month: { mrr: { closing: { total: 1000 } } } }),
   mrrFlow: commercialSample({ month: { mrr: { opening: 1000 }, counts: {} } }),

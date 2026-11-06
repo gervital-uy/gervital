@@ -13,7 +13,7 @@ jest.mock('../../components/ui/MonthNavigator', () => () => null)
 // Gestión CFP lee el padrón real; acá alcanza con uno vacío. Finanzas, una serie vacía.
 jest.mock('../../services/dashboardV2/queries', () => ({ loadPadron: jest.fn() }))
 const { loadPadron } = jest.requireMock('../../services/dashboardV2/queries')
-jest.mock('../../services/dashboardV2/financeQueries', () => ({ loadFinanceData: jest.fn() }))
+jest.mock('../../services/dashboardV2/financeQueries', () => ({ loadFinanceData: jest.fn(), getTransportMonthSources: jest.fn() }))
 const { loadFinanceData } = jest.requireMock('../../services/dashboardV2/financeQueries')
 jest.mock('../../services/settings/appSettingsService', () => ({ getSetting: jest.fn(), setSetting: jest.fn() }))
 // Comercial se carga de una sola vez; acá alcanza con que nunca termine.
