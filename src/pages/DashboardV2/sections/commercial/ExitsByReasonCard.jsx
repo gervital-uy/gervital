@@ -18,7 +18,13 @@ export const windowSize = value => (value === 'all' ? null : value)
 
 // La barra va en un solo tono: mide tamaño, no identidad (el motivo está escrito al lado).
 const BAR = '#828df4'
-const COLS = 'grid-cols-[minmax(104px,1.15fr)_minmax(0,1.35fr)_auto_auto]'
+// La columna de la ventana anterior solo existe cuando hay ventana anterior: hasta
+// entonces sería una fila de rayas que le quita el lugar al motivo, que es el dato.
+// En el celular el motivo va en su propio renglón, con todo el ancho (al lado de la
+// barra se cortaba), y la barra con los números abajo; desde sm, todo en una fila
+// donde el motivo pasa a dos renglones antes que cortarse.
+const COLS = 'grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(112px,1.3fr)_minmax(0,1.2fr)_auto]'
+const COLS_PREV = 'grid-cols-[minmax(0,1fr)_auto_auto] sm:grid-cols-[minmax(112px,1.3fr)_minmax(0,1.2fr)_auto_auto]'
 
 // exits: activityTimeline.exitsByReason del mes con la ventana elegida.
 export default function ExitsByReasonCard({ exits, windowValue, onWindow }) {
@@ -26,6 +32,7 @@ export default function ExitsByReasonCard({ exits, windowValue, onWindow }) {
   const max = rows.reduce((m, r) => Math.max(m, r.value), 0) || 1
   const covered = requested == null ? null : coverage(months, requested)
   const prevOf = key => (prev ? prev.find(p => p.key === key)?.value || 0 : null)
+  const cols = prev ? COLS_PREV : COLS
 
   return (
     <Card role="group" aria-label="Bajas por motivo" className={CARD}>
@@ -51,11 +58,12 @@ export default function ExitsByReasonCard({ exits, windowValue, onWindow }) {
           <p className="text-sm text-gray-400 py-8 text-center">Sin bajas en el período.</p>
         ) : (
           <>
-            <div className={`grid ${COLS} gap-x-3 items-center text-[10px] font-medium text-gray-400 uppercase tracking-wide pb-2 border-b border-gray-100`}>
+            <div className={`grid ${cols} gap-x-3 items-center text-[10px] font-medium text-gray-400 uppercase tracking-wide pb-2 border-b border-gray-100`}>
               <span>Motivo</span>
-              <span />
+              {/* La columna de la barra: en el celular la barra va en el renglón de abajo */}
+              <span className="hidden sm:block" />
               <span className="text-right min-w-[62px]">Bajas</span>
-              <span className="text-right min-w-[58px]">{prev ? `vs ${requested} m previos` : ''}</span>
+              {prev && <span className="text-right min-w-[58px]">vs {requested} m previos</span>}
             </div>
             {rows.map(r => {
               const before = prevOf(r.key)
@@ -64,12 +72,13 @@ export default function ExitsByReasonCard({ exits, windowValue, onWindow }) {
               return (
                 <div
                   key={r.key}
-                  className={`grid ${COLS} gap-x-3 items-center py-[7px] border-b border-gray-50 last:border-b-0`}
+                  className={`grid ${cols} gap-x-3 gap-y-1 items-center py-[7px] border-b border-gray-50 last:border-b-0`}
                   title={`${r.label}: ${plural(r.value, 'baja', 'bajas')} de ${total}, ${formatDecimal(share, 0)}%${before == null ? '' : `. En los ${requested} meses previos: ${before}.`}${r.pauses ? ` ${plural(r.pauses, 'en pausa temporal', 'en pausa temporal')}.` : ''}`}
                 >
-                  <span className="flex items-baseline gap-1.5 min-w-0">
-                    <span className="text-[12.5px] text-gray-700 truncate">{r.label}</span>
-                    {r.pauses > 0 && <span className="text-[10px] text-gray-400 whitespace-nowrap">{r.pauses} en pausa</span>}
+                  {/* El nombre entero siempre a la vista: en el celular no hay title */}
+                  <span className="col-span-full sm:col-span-1 min-w-0 text-[12.5px] leading-snug text-gray-700 break-words">
+                    {r.label}
+                    {r.pauses > 0 && <span className="ml-1.5 text-[10px] text-gray-400 whitespace-nowrap">{r.pauses} en pausa</span>}
                   </span>
                   <div className="relative h-2">
                     <div className="absolute left-0 top-0 bottom-0 rounded-[2px_4px_4px_2px]" style={{ width: `${(r.value / max) * 100}%`, background: BAR }} />
@@ -78,11 +87,12 @@ export default function ExitsByReasonCard({ exits, windowValue, onWindow }) {
                     <span className="text-[12.5px] text-gray-900">{r.value}</span>
                     <span className="text-[10.5px] text-gray-400 ml-1.5">{formatDecimal(share, 0)}%</span>
                   </span>
-                  <span className="text-right tabular-nums whitespace-nowrap text-[11.5px] min-w-[58px]">
-                    {delta == null ? <span className="text-gray-300">—</span>
-                      : delta === 0 ? <span className="text-gray-400">=</span>
-                      : <span className={delta > 0 ? 'text-rose-700' : 'text-teal-700'}>{delta > 0 ? `▲ ${delta}` : `▼ ${-delta}`}</span>}
-                  </span>
+                  {prev && (
+                    <span className="text-right tabular-nums whitespace-nowrap text-[11.5px] min-w-[58px]">
+                      {delta === 0 ? <span className="text-gray-400">=</span>
+                        : <span className={delta > 0 ? 'text-rose-700' : 'text-teal-700'}>{delta > 0 ? `▲ ${delta}` : `▼ ${-delta}`}</span>}
+                    </span>
+                  )}
                 </div>
               )
             })}

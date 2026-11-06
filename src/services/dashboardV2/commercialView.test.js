@@ -39,7 +39,7 @@ test('apportion reparte un total entero sin perder pesos', () => {
 })
 
 describe('composición y aporte', () => {
-  const value = total => ({ attendanceList: total, attendance: total, transport: 0, total, missing: null })
+  const value = total => ({ attendanceList: total, attendance: total, transport: 0, total, missing: [] })
   const members = [
     { client: client('a', { cognitiveLevel: 'A', birthDate: '1950-01-01' }), plan: { frequency: 2, schedule: 'afternoon' }, value: value(24590.16) },
     { client: client('b', { cognitiveLevel: 'D', birthDate: '1930-01-01' }), plan: { frequency: 5, schedule: 'full_day' }, value: value(66393.44) },
@@ -116,7 +116,8 @@ describe('buildCommercial', () => {
     expect(oct.composition.age.map(r => r.label)).toEqual(['85 a 89', 'Sin dato'])
     // a: martes y jueves de tarde; c: viernes de tarde (b ya se fue)
     expect(oct.occupancy.shifts[1].cells.map(c => c.users)).toEqual([0, 1, 0, 1, 1])
-    expect(oct.occupancy.shifts[0].sold).toBe(0)
+    expect(oct.occupancy.shifts[0].taken).toBe(0)
+    expect(oct.occupancy.taken).toBe(oct.occupancy.sold)
     expect(oct.occupancy).toMatchObject({ capacity: 20, isDefaultCapacity: false })
     expect(oct.occupancy.revenuePerSeat).toBeCloseTo(43180 / oct.occupancy.seatsMonth)
     expect(oct.occupancy.revenuePerSoldSeat).toBeCloseTo(43180 / oct.occupancy.sold)
@@ -140,6 +141,26 @@ describe('buildCommercial', () => {
     expect(sim).toMatchObject({ capacity: 10, simulated: true, isDefaultCapacity: false, sold: oct.occupancy.sold })
     expect(sim.pct).toBeCloseTo(oct.occupancy.pct * 2)
     expect(oct.occupancy).toMatchObject({ capacity: 20, simulated: false })
+  })
+
+  test('la ocupación cuenta también a los que ocupan lugar sin pagar', () => {
+    // e: sin cargo, martes de tarde; v: a prueba desde el 20 de octubre, lunes de tarde
+    const withOthers = buildCommercial({
+      ...sources,
+      clients: [...sources.clients, client('e', { clientType: 'charity', startDate: '2026-07-01' }), client('v', { clientType: 'trial', startDate: '2026-10-20', trialStartedAt: '2026-10-20' })],
+      plans: [...sources.plans, plan('e', { assignedDays: ['tuesday'] }), plan('v', { effectiveFrom: '2026-10-20', assignedDays: ['monday'] })]
+    }, { today: '2026-11-06' })
+    const o = withOthers.month(withOthers.indexOf(2026, 9))
+    // Ocupación: martes con a y e; lunes con v
+    expect(o.occupancy.shifts[1].cells.map(c => c.users)).toEqual([1, 2, 0, 1, 1])
+    expect(o.occupancy.shifts[1].cells.map(c => c.paying)).toEqual([0, 1, 0, 1, 1])
+    // La cartera, el MRR y los lugares vendidos no cambian
+    expect(o.counts.closing).toBe(2)
+    expect(o.mrr.closing.total).toBe(oct.mrr.closing.total)
+    expect(o.occupancy.sold).toBe(oct.occupancy.sold)
+    expect(o.occupancy.taken).toBe(oct.occupancy.taken + 4 + 4)
+    expect(o.occupancy.revenuePerSoldSeat).toBeCloseTo(43180 / oct.occupancy.sold)
+    expect(o.occupancy.pct).toBeGreaterThan(oct.occupancy.pct)
   })
 
   test('sin aforo guardado usa el de por defecto y lo marca', () => {

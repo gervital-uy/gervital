@@ -120,8 +120,8 @@ describe('saveShiftCapacity', () => {
   })
 
   test('no guarda nada fuera de rango o que no sea entero', async () => {
-    for (const v of ['', 'abc', 0, 12.5, 500, null]) {
-      await expect(saveShiftCapacity(v)).rejects.toThrow('entre 1 y 200')
+    for (const v of ['', 'abc', 0, 4, 12.5, 61, 500, null]) {
+      await expect(saveShiftCapacity(v)).rejects.toThrow('entre 5 y 60')
     }
     expect(setSetting).not.toHaveBeenCalled()
   })

@@ -1,6 +1,6 @@
 import {
   buildTimeline, churnWindow, cohortRetention, exitsByReason, flowSeries, monthChurn,
-  monthIndexOf, sameMonthSeries, tenureStats
+  monthIndexOf, occupantsOn, sameMonthSeries, tenureStats
 } from './activityTimeline'
 import { createValuer, runRateSeries, runRateWindow, sumValues } from './runRate'
 import { occupancy, parseShiftCapacity } from './occupancy'
@@ -10,7 +10,9 @@ import { occupancy, parseShiftCapacity } from './occupancy'
 //
 // La base de todo es la misma: los activos al cierre del mes (o de hoy, si el mes
 // está en curso) de activityTimeline, cada uno con su plan vigente de ese mes. Así
-// composición, aporte, ocupación y MRR hablan de las mismas personas.
+// composición, aporte, MRR y lugares vendidos hablan de las mismas personas. La
+// ocupación suma además a los que ocupan un lugar sin ser de la cartera (no
+// facturables y a prueba): ocupan lugar aunque no paguen.
 
 // Tramos de edad: quinquenios entre los 75 y los 89, con una cola abierta en cada
 // punta (a esta edad cinco años cambian bastante el perfil).
@@ -162,10 +164,15 @@ export function buildCommercial(sources, { today }) {
     return { clientId: person.id, client: person.client, plan: value.plan, value }
   })
 
-  const occupancyOf = (m, cap) => occupancy(
-    membersOf(m).map(({ plan, client }) => ({ schedule: plan?.schedule, assignedDays: plan?.assignedDays, tier: client.cognitiveLevel })),
-    { year: m.year, month: m.month, capacity: cap }
-  )
+  // Todos los que ocupan un lugar al corte del mes, cada uno con su plan vigente.
+  const occupancyOf = (m, cap) => {
+    const paying = new Set(m.active.map(({ person }) => person.id))
+    const seats = occupantsOn(timeline.occupants, m.cut).map(({ id, client }) => {
+      const plan = valuer(id, m.year, m.month).plan
+      return { schedule: plan?.schedule, assignedDays: plan?.assignedDays, tier: client.cognitiveLevel, paying: paying.has(id) }
+    })
+    return occupancy(seats, { year: m.year, month: m.month, capacity: cap })
+  }
 
   // La ocupación del mes con un aforo dado: el guardado (o el de por defecto), o uno
   // que se prueba en pantalla sin guardarlo (simulated).
@@ -179,7 +186,8 @@ export function buildCommercial(sources, { today }) {
       simulated,
       delta: prev?.pct != null && occ.pct != null ? occ.pct - prev.pct : null,
       // Rendimiento por lugar: el MRR del mes sobre los lugares del mes. Por lugar
-      // disponible mide capacidad y precio juntos; por lugar vendido, solo el precio.
+      // disponible mide capacidad y precio juntos; por lugar vendido (de un cliente
+      // que paga), solo el precio.
       revenuePerSeat: occ.seatsMonth > 0 ? mrr / occ.seatsMonth : null,
       revenuePerSoldSeat: occ.sold > 0 ? mrr / occ.sold : null
     }

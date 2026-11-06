@@ -66,7 +66,7 @@ export default function OccupancyHeatmap({ occupancy, monthLabel, view, onView }
             <InfoButton id={byTier ? 'heatmapTiers' : 'heatmapSeats'} />
           </h3>
           <p className="text-xs text-gray-400 mt-0.5">
-            {byTier ? 'Quiénes ocupan cada casillero, por tier' : 'Lugares vendidos por día y turno'}
+            {byTier ? 'Quiénes ocupan cada casillero, por tier' : 'Lugares ocupados por día y turno'}
           </p>
         </div>
         <div className="shrink-0 flex flex-col items-start sm:items-end gap-1.5">
@@ -98,7 +98,7 @@ export default function OccupancyHeatmap({ occupancy, monthLabel, view, onView }
                 <span className="text-[13px] font-semibold text-gray-700 leading-none">{shift.label}</span>
               </div>
               {shift.cells.map(cell => {
-                const title = `${shift.label}, ${cell.label.toLowerCase()}: ${cell.users} de ${capacity} lugares vendidos · ${freeText(cell, capacity)}${cell.users > 0 ? ` · ${tierText(cell)}` : ''}`
+                const title = `${shift.label}, ${cell.label.toLowerCase()}: ${cell.users} de ${capacity} lugares ocupados · ${freeText(cell, capacity)}${cell.users > 0 ? ` · ${tierText(cell)}` : ''}`
                 if (byTier) {
                   return (
                     <div key={cell.weekday} className="h-[64px] rounded-lg border border-gray-100 bg-white px-2.5 flex flex-col justify-center gap-2" title={title}>
@@ -149,7 +149,7 @@ export default function OccupancyHeatmap({ occupancy, monthLabel, view, onView }
             <span className="text-[10px] text-gray-400 tabular-nums">0%</span>
             <span className="h-2 w-[132px] rounded-full border border-gray-100" style={{ background: HEAT_GRADIENT }} />
             <span className="text-[10px] text-gray-400 tabular-nums">100%</span>
-            <span className="text-[10.5px] text-gray-400 ml-1">lugares vendidos sobre el aforo</span>
+            <span className="text-[10.5px] text-gray-400 ml-1">lugares ocupados sobre el aforo</span>
           </div>
         )}
       </div>

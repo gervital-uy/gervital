@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, within, waitFor } from '@testing-library/react'
 import CommercialSection from './CommercialSection'
 import { MonthDataProvider } from '../../useMonthData'
 import { buildCommercial } from '../../../../services/dashboardV2/commercialView'
@@ -16,6 +16,10 @@ let mockCanWriteSettings = true
 jest.mock('../../../../context/AuthContext', () => ({
   useAuth: () => ({ hasAccess: feature => feature !== 'expense_settings' || mockCanWriteSettings })
 }))
+
+// El día que ve la pantalla, fijo: el modelo de cada test se arma con el mismo día.
+let mockToday = '2026-11-06'
+jest.mock('../../useToday', () => ({ useToday: () => mockToday }))
 
 // Una cartera chica (hoy = 6 de noviembre de 2026):
 //   Ana: heredada, 2× tarde con transporte y 10% de descuento en octubre
@@ -53,13 +57,14 @@ const SOURCES = {
   reasons: [{ key: 'health_decline', label: 'Deterioro de salud', color: '#dc2626', sortOrder: 3 }],
   shiftCapacity: '20'
 }
-const model = (over = {}) => buildCommercial({ ...SOURCES, ...over }, { today: '2026-11-06' })
+const model = (over = {}, today = '2026-11-06') => buildCommercial({ ...SOURCES, ...over }, { today })
 
-const renderSection = (selected = { year: 2026, month: 9 }) => render(
+const tree = (selected = { year: 2026, month: 9 }, mounted = true) => (
   <MonthDataProvider>
-    <CommercialSection selected={selected} />
+    {mounted && <CommercialSection selected={{ ...selected }} />}
   </MonthDataProvider>
 )
+const renderSection = selected => render(tree(selected))
 
 // Cada KPI y cada tarjeta es un grupo con su nombre.
 const cardOf = name => screen.getByRole('group', { name })
@@ -67,6 +72,7 @@ const cardOf = name => screen.getByRole('group', { name })
 describe('Comercial', () => {
   beforeEach(() => {
     mockCanWriteSettings = true
+    mockToday = '2026-11-06'
     loadCommercial.mockReset().mockResolvedValue(model())
     saveShiftCapacity.mockReset().mockResolvedValue()
   })
@@ -106,9 +112,56 @@ describe('Comercial', () => {
     expect(await screen.findByText('No hay datos comerciales para este mes.')).toBeInTheDocument()
   })
 
-  test('el mes en curso avisa que va hasta hoy', async () => {
+  test('el mes en curso avisa que va hasta hoy y no compara sus flujos con el promedio', async () => {
     renderSection({ year: 2026, month: 10 })
     expect(await screen.findByText(/Mes en curso: los números van hasta hoy, 6 nov 2026/)).toBeInTheDocument()
+    for (const name of ['MRR ganado', 'MRR perdido']) {
+      expect(within(cardOf(name)).getByText('mes en curso')).toBeInTheDocument()
+      expect(within(cardOf(name)).queryByText(/vs promedio/)).not.toBeInTheDocument()
+    }
+    expect(within(cardOf('Churn 12 meses')).getByText('bajas: mes en curso')).toBeInTheDocument()
+    // El promedio es de los meses cerrados (jun–oct), sin noviembre
+    expect(within(cardOf('MRR ganado')).getByText(/por mes en promedio · 5 meses cerrados/)).toBeInTheDocument()
+  })
+
+  test('un mes cerrado se compara con el promedio de los meses cerrados', async () => {
+    renderSection()
+    await screen.findByText('Clientes activos')
+    // Octubre: la baja de Beto (66.393) contra un promedio de 66.393 / 5
+    const lost = cardOf('MRR perdido')
+    expect(within(lost).getByText('vs promedio 5 m')).toBeInTheDocument()
+    expect(within(lost).getByText('↑400%')).toBeInTheDocument()
+    expect(within(cardOf('Churn 12 meses')).getByText('bajas vs promedio')).toBeInTheDocument()
+  })
+
+  test('al volver a la pestaña otro día, rehace la cartera', async () => {
+    const { rerender } = render(tree({ year: 2026, month: 10 }))
+    expect(await screen.findByText(/van hasta hoy, 6 nov 2026/)).toBeInTheDocument()
+    // Se va a otra pestaña (la sección se desmonta, el caché queda) y vuelve al otro día
+    rerender(tree({ year: 2026, month: 10 }, false))
+    mockToday = '2026-11-07'
+    loadCommercial.mockResolvedValue(model({}, '2026-11-07'))
+    rerender(tree({ year: 2026, month: 10 }))
+    expect(await screen.findByText(/van hasta hoy, 7 nov 2026/)).toBeInTheDocument()
+    expect(loadCommercial).toHaveBeenCalledTimes(2)
+  })
+
+  test('al empezar un mes con la pestaña abierta, rehace la cartera una sola vez y sin vaciarla', async () => {
+    mockToday = '2026-11-30'
+    loadCommercial.mockResolvedValue(model({}, '2026-11-30'))
+    const { rerender } = render(tree())
+    await screen.findByText('Clientes activos')
+    mockToday = '2026-12-01'
+    loadCommercial.mockResolvedValue(model({}, '2026-12-01'))
+    rerender(tree())
+    // Lo que está en pantalla se queda mientras se rehace
+    expect(screen.getByText('Clientes activos')).toBeInTheDocument()
+    expect(screen.queryByText('Cargando la cartera…')).not.toBeInTheDocument()
+    await waitFor(() => expect(loadCommercial).toHaveBeenCalledTimes(2))
+    // El mes nuevo ya está en el modelo
+    rerender(tree({ year: 2026, month: 11 }))
+    expect(await screen.findByText(/van hasta hoy, 1 dic 2026/)).toBeInTheDocument()
+    expect(loadCommercial).toHaveBeenCalledTimes(2)
   })
 
   test('probar un aforo no guarda nada; guardarlo es un botón aparte', async () => {
@@ -144,6 +197,23 @@ describe('Comercial', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Bajar el aforo' }))
     expect(screen.getByText(/Probando/)).toHaveTextContent('Probando 29 lugares por turno: no está guardado. Sin aforo guardado se usan 30.')
     expect(screen.queryByRole('button', { name: /como aforo/ })).not.toBeInTheDocument()
+  })
+
+  test('mientras se guarda el aforo no se puede probar otro', async () => {
+    let finish
+    saveShiftCapacity.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    renderSection()
+    await screen.findByText('Clientes activos')
+    fireEvent.click(screen.getByRole('button', { name: 'Subir el aforo' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar 21 como aforo' }))
+    expect(screen.getByText('Guardando el aforo…')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Subir el aforo' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Bajar el aforo' })).toBeDisabled()
+    expect(screen.getByRole('textbox', { name: 'Aforo por turno' })).toBeDisabled()
+    loadCommercial.mockResolvedValue(model({ shiftCapacity: '21' }))
+    await act(async () => finish())
+    expect(await screen.findByText('Aforo guardado: 21 lugares por turno.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Subir el aforo' })).toBeEnabled()
   })
 
   test('un aforo que no se pudo guardar lo avisa y sigue a prueba', async () => {

@@ -1,7 +1,7 @@
 import { DIMENSIONS } from '../../../../services/dashboardV2/commercialView'
 import { DEFAULT_SHIFT_CAPACITY } from '../../../../services/dashboardV2/occupancy'
 import { PLATFORM_START_ISO } from '../../../../services/dashboardV2/platform'
-import { DASH, MINUS, formatDecimal, monthLabelOf, money, pctText, plural } from '../../format'
+import { DASH, MINUS, MONTH_FULL, formatDecimal, monthLabelOf, money, pctText, plural } from '../../format'
 
 // Explicaciones de la pestaña Comercial. ctx = { month, occupancy, composition,
 // mix, exits, cohorts, monthLabel }: month es commercialView.month(i); occupancy la
@@ -14,7 +14,9 @@ const monthsText = n => (isNum(n) ? `${n} ${n === 1 ? 'mes' : 'meses'}` : DASH)
 const signed = n => (!isNum(n) ? DASH : n > 0 ? `+${n}` : n < 0 ? `${MINUS}${-n}` : '0')
 const negative = v => (isNum(v) ? -v : undefined)
 const share = (part, total) => (isNum(part) && isNum(total) && total > 0 ? pctText((part / total) * 100, 0) : DASH)
-const LAUNCH = monthLabelOf(Number(PLATFORM_START_ISO.slice(0, 4)), Number(PLATFORM_START_ISO.slice(5, 7)) - 1)
+const LAUNCH_YEAR = Number(PLATFORM_START_ISO.slice(0, 4))
+const LAUNCH_MONTH = MONTH_FULL[Number(PLATFORM_START_ISO.slice(5, 7)) - 1]
+const LAUNCH = monthLabelOf(LAUNCH_YEAR, Number(PLATFORM_START_ISO.slice(5, 7)) - 1)
 
 const TIMELINE_SOURCE = 'Sale de la fecha de ingreso de cada ficha y de sus períodos de inactividad, que son la fuente de verdad de las bajas y los reingresos (la ficha solo guarda la baja actual). Los períodos superpuestos se unen y una baja deshecha al día siguiente no cuenta. Cada reingreso es un alta.'
 const MRR_BASIS = 'la cuota de lista del plan vigente del mes con el descuento de ese mes (de una promo o suelto), más el transporte, todo sin IVA'
@@ -39,6 +41,7 @@ const activeClients = ({ month = {}, monthLabel = 'el mes' }) => {
 
 const mrr = ({ month = {} }) => {
   const v = month.mrr?.closing || {}
+  const missing = v.missing || {}
   return {
     title: 'MRR contratado',
     unit: ['sin IVA', 'con descuentos', 'cartera al cierre'],
@@ -47,7 +50,9 @@ const mrr = ({ month = {} }) => {
       { label: `Cuotas de lista de asistencia (${plural(v.count, 'cliente', 'clientes')})`, value: v.attendanceList },
       { label: 'Descuentos del mes (promos y sueltos)', value: negative(v.discount), op: '−' },
       { label: 'Transporte', value: v.transport, op: '+' },
-      ...(v.missing ? [{ label: 'Clientes sin plan, precio o distancia (valen $ 0)', text: count(v.missing), info: true }] : [])
+      ...(missing.plan ? [{ label: 'Sin plan (valen $ 0)', text: count(missing.plan), info: true }] : []),
+      ...(missing.price ? [{ label: 'Sin precio de lista para su plan (la asistencia vale $ 0)', text: count(missing.price), info: true }] : []),
+      ...(missing.distance ? [{ label: 'Con transporte y sin distancia (el transporte vale $ 0)', text: count(missing.distance), info: true }] : [])
     ],
     total: { label: 'MRR contratado', value: v.total },
     source: `Por cliente activo, ${MRR_BASIS}. El plan es la versión vigente del mes (client_plans está versionado por fecha de vigencia y se toma una sola), el precio es el de lista vigente ese mes, el descuento sale del mes del cliente (monthly_invoices) y el transporte va por frecuencia y por la distancia de su dirección. La asistencia se netea al 22% y el transporte al 10%. El descuento corre solo sobre la asistencia, igual que en la facturación.`,
@@ -72,8 +77,8 @@ const mrrFlow = ({ month = {} }) => {
       { label: `Perdido en ${monthsText(w.months)}`, text: money(w.lost), info: true }
     ],
     total: { label: 'MRR al cierre', value: r.closing?.total },
-    source: 'Las altas y las bajas son las mismas que cuenta Clientes activos (un reingreso es un alta). Un alta suma lo que vale en su mes y una baja resta lo que valía en el mes en que se fue. Lo que el MRR se movió sin que nadie entrara ni saliera (un cambio de plan, un precio de lista nuevo, una promo que empieza o termina) queda como residuo, así que las filas siempre cierran.',
-    caveat: `Las tarjetas comparan el mes con el promedio de ${monthsText(w.months)}: los que la plataforma lleva operando, hasta 12. Los cambios de plan no se registran como evento, así que la venta de más días a un cliente que ya está (expansión) y la de menos (contracción) viajan juntas en el residuo.`
+    source: 'Las altas y las bajas son las mismas que cuenta Clientes activos (un reingreso es un alta). Un alta suma lo que vale en su mes. Una baja resta lo que aportaba al MRR del cierre anterior, que es lo que efectivamente se fue; si entró y se fue en el mismo mes, resta lo mismo que sumó. Lo que se movió el MRR de los que estaban y siguen (un cambio de plan, un precio de lista nuevo, una promo que empieza o termina) queda como residuo, así que las filas siempre cierran.',
+    caveat: `Las tarjetas comparan el mes con el promedio de los meses cerrados de la ventana (${monthsText(w.avgMonths)}: los que la plataforma lleva operando, hasta 12). El mes en curso no se compara: va hasta hoy y el promedio es de meses completos, así que se vería peor o mejor de lo que es. Los cambios de plan no se registran como evento, así que la venta de más días a un cliente que ya está (expansión) y la de menos (contracción) viajan juntas en el residuo.`
   }
 }
 
@@ -89,12 +94,12 @@ const churn = ({ month = {} }) => {
       { label: 'Cartera media (promedio de los cierres)', text: isNum(w.baseMedia) ? formatDecimal(w.baseMedia) : DASH, op: '÷' },
       { label: 'Bajas de este mes', text: count(month.counts?.bajas), info: true },
       { label: 'Churn del mes (bajas ÷ base al inicio)', text: pctText(month.churn?.month), info: true },
-      { label: 'Promedio de bajas por mes', text: formatDecimal(w.avgBajas), info: true },
+      { label: `Promedio de bajas por mes (${monthsText(w.avgMonths)} ${w.avgMonths === 1 ? 'cerrado' : 'cerrados'})`, text: formatDecimal(w.avgBajas), info: true },
       { label: 'Ventana anterior del mismo largo', text: w.prev ? pctText(w.prev.churn) : 'todavía no existe', info: true }
     ],
     total: { label: 'Churn de la ventana', text: pctText(w.churn) },
     source: 'Las bajas son las mismas que cuentan Clientes activos y Bajas por motivo. La cartera media es el promedio de los activos al cierre de cada mes de la ventana (el mes en curso, al día de hoy): si la cartera creció, dividir por el último cierre daría un churn más bajo que el real.',
-    caveat: `${isNum(base) && base > 0 ? `Con ${base} clientes de base, una sola baja mueve el churn del mes ${formatDecimal(100 / base)} puntos: ` : 'Con una cartera chica, una sola baja mueve mucho el churn del mes: '}por eso el titular es la ventana y el mes va en personas. El color compara contra la ventana anterior del mismo largo (verde si bajó más de un punto, rojo si subió más de uno), que recién existe cuando la plataforma tiene el doble de historia: hasta entonces va en gris. Una baja en pausa temporal cuenta como baja.`
+    caveat: `${isNum(base) && base > 0 ? `Con ${base} clientes de base, una sola baja mueve el churn del mes ${formatDecimal(100 / base)} puntos: ` : 'Con una cartera chica, una sola baja mueve mucho el churn del mes: '}por eso el titular es la ventana y el mes va en personas. El color compara contra la ventana anterior del mismo largo (verde si bajó más de un punto, rojo si subió más de uno), que recién existe cuando la plataforma tiene el doble de historia: hasta entonces va en gris. Las bajas del mes se comparan con el promedio de los meses cerrados; en el mes en curso no se comparan, porque el mes no terminó. Una baja en pausa temporal cuenta como baja.`
   }
 }
 
@@ -120,25 +125,30 @@ const capacityOrigin = o => (o.simulated
   ? 'un aforo a prueba, sin guardar'
   : o.isDefaultCapacity ? `el aforo por defecto (no hay uno guardado)` : 'el aforo guardado del centro')
 
+// Quiénes ocupan un lugar: la ocupación cuenta a todos, pague o no.
+const OCCUPANTS = 'todos los que ocupan un lugar al cierre del mes (o hoy, si está en curso), paguen o no: los clientes regulares, los no facturables y los que están a prueba (también la prueba de quien después se quedó, desde la fecha en que empezó)'
+
 const occupancy = ({ occupancy: o = {}, monthLabel = 'el mes' }) => {
   const shifts = o.shifts || []
   const [am, pm] = shifts
   const busiest = shifts.filter(s => s.busiest.users > 0).map(s => `${s.label.toLowerCase()}, el ${s.busiest.label.toLowerCase()} con ${s.busiest.users} de ${o.capacity}`).join('; ')
+  const unpaid = isNum(o.taken) && isNum(o.sold) ? o.taken - o.sold : null
   return {
     title: 'Ocupación y rendimiento por lugar',
     unit: ['sobre lo contratado', 'lugares por turno', o.simulated ? 'aforo a prueba' : 'mes seleccionado'],
-    what: `Qué parte de los lugares de cada turno está vendida y cuánto MRR rinde cada lugar. Se toman ${count(o.capacity)} lugares por turno (${capacityOrigin(o)}), iguales para la mañana y la tarde: cada turno ofrece ese aforo por cada día hábil del mes.`,
+    what: `Qué parte de los lugares de cada turno está ocupada y cuánto MRR rinde cada lugar. Se toman ${count(o.capacity)} lugares por turno (${capacityOrigin(o)}), iguales para la mañana y la tarde: cada turno ofrece ese aforo por cada día hábil del mes.`,
     rows: [
       { label: `Días hábiles de ${monthLabel} (lunes a viernes)`, text: count(o.workdays) },
       { label: `Lugares por turno en el mes (${count(o.capacity)} × ${count(o.workdays)})`, text: count(o.seatsPerShift) },
-      { label: 'Vendidos a la mañana (incluye día completo)', text: am ? `${am.sold} · ${pctText(am.pct, 0)}` : DASH },
-      { label: 'Vendidos a la tarde (incluye día completo)', text: pm ? `${pm.sold} · ${pctText(pm.pct, 0)}` : DASH },
+      { label: 'Ocupados a la mañana (incluye día completo)', text: am ? `${am.taken} · ${pctText(am.pct, 0)}` : DASH },
+      { label: 'Ocupados a la tarde (incluye día completo)', text: pm ? `${pm.taken} · ${pctText(pm.pct, 0)}` : DASH },
       { label: 'Promedio por día: mañana / tarde', text: am && pm ? `${formatDecimal(am.perDay)} / ${formatDecimal(pm.perDay)}` : DASH },
+      { label: 'De los ocupados, de no facturables o a prueba', text: count(unpaid), info: true },
       { label: 'MRR por lugar disponible', text: money(o.revenuePerSeat), info: true },
-      { label: 'MRR por lugar vendido', text: money(o.revenuePerSoldSeat), info: true }
+      { label: `MRR por lugar vendido (${count(o.sold)} de clientes regulares)`, text: money(o.revenuePerSoldSeat), info: true }
     ],
     total: { label: 'Ocupación general', text: isNum(o.pct) ? `${pctText(o.pct, 0)} de ${o.seatsMonth} lugares-turno` : DASH },
-    source: `De cada cliente activo se toman los días de la semana de su plan vigente del mes y se cuentan las veces que cae cada uno en el mes (un mes con cinco lunes vende cinco lunes). Un plan de día completo ocupa un lugar a la mañana y otro a la tarde. El aforo se guarda en la configuración del centro (shift_capacity) desde esta tarjeta; mientras no haya uno guardado se usan ${DEFAULT_SHIFT_CAPACITY}. El rendimiento divide el MRR contratado del mes, sin IVA, entre los lugares disponibles o los vendidos.`,
+    source: `Cuenta a ${OCCUPANTS}. Lo que se agota es el lugar, no la cuota. De cada uno se toman los días de la semana de su plan vigente del mes y se cuentan las veces que cae cada uno en el mes (un mes con cinco lunes ocupa cinco lunes). Un plan de día completo ocupa un lugar a la mañana y otro a la tarde. El aforo se guarda en la configuración del centro (shift_capacity) desde esta tarjeta; mientras no haya uno guardado se usan ${DEFAULT_SHIFT_CAPACITY}. El rendimiento divide el MRR contratado del mes, sin IVA, entre los lugares disponibles o entre los vendidos, que son solo los de clientes regulares (los únicos que pagan).`,
     caveat: `Los libres son un promedio del mes, y lo que limita una venta es el día más cargado${busiest ? ` (${busiest})` : ''}: el detalle está en el mapa de calor. Se mide sobre lo contratado, así que no baja cuando alguien falta (eso es Asistencia). No hay calendario de feriados: cuentan todos los días de lunes a viernes.${o.simulated ? ' El aforo que se ve es una prueba: no está guardado.' : ''}`
   }
 }
@@ -151,14 +161,14 @@ const heatmapSeats = ({ occupancy: o = {} }) => {
   return {
     title: 'Mapa de calor de ocupación',
     unit: ['sobre lo contratado', '% del aforo', o.simulated ? 'aforo a prueba' : 'mes seleccionado'],
-    what: 'Qué parte del aforo está vendida en cada casillero: día de la semana por turno. Es la ocupación de la tarjeta de arriba abierta por casillero; mide lugares vendidos, no gente que vino.',
+    what: 'Qué parte del aforo está ocupada en cada casillero: día de la semana por turno. Es la ocupación de la tarjeta de arriba abierta por casillero; mide lugares contratados, no gente que vino.',
     rows: [
       { label: `Aforo por turno (${capacityOrigin(o)})`, text: count(o.capacity) },
       ...shifts.map(s => ({ label: `${s.label}: clientes por día (lun a vie)`, text: perDay(s) })),
-      ...shifts.map(s => ({ label: `${s.label}: lugares vendidos en el mes`, text: `${s.sold} de ${o.seatsPerShift}` }))
+      ...shifts.map(s => ({ label: `${s.label}: lugares ocupados en el mes`, text: `${s.taken} de ${o.seatsPerShift}` }))
     ],
     total: { label: 'Ocupación del turno', text: shifts.map(s => `${s.label} ${pctText(s.pct, 0)}`).join(' · ') || DASH },
-    source: 'Cada celda son los clientes activos que tienen ese día en su plan vigente del mes, sobre el aforo. El promedio de la fila se pondera por las veces que cae cada día en el mes y da exactamente la ocupación del turno de la tarjeta de arriba. Un plan de día completo cuenta en las dos filas.',
+    source: `Cada celda son los que tienen ese día en su plan vigente del mes, sobre el aforo. Cuenta a ${OCCUPANTS}. El promedio de la fila se pondera por las veces que cae cada día en el mes y da exactamente la ocupación del turno de la tarjeta de arriba. Un plan de día completo cuenta en las dos filas.`,
     caveat: `Como mide lo contratado, no baja cuando alguien falta: para planificar personal hace falta la asistencia esperada, que es de Asistencia. No hay calendario de feriados.${room ? ` Donde entra un cliente más con menos carga de alta dependencia: ${room}.` : ''}`
   }
 }
@@ -179,7 +189,7 @@ const heatmapTiers = ({ occupancy: o = {} }) => {
         ? `${s.label.toLowerCase()} ${s.mostDependents.label.toLowerCase()}: ${s.mostDependents.dependents} de ${s.mostDependents.users}`
         : `${s.label.toLowerCase()}: sin tier C ni D`)).join(' · ') || DASH
     },
-    source: 'Cruza el tier de la ficha con los días y el turno del plan vigente del mes. El total de cada casillero es el mismo de la vista Cupos: una dice cuántos y la otra, quiénes.',
+    source: 'Cruza el tier de la ficha con los días y el turno del plan vigente del mes, de todos los que ocupan un lugar (regulares, no facturables y a prueba). El total de cada casillero es el mismo de la vista Cupos: una dice cuántos y la otra, quiénes.',
     caveat: 'El tier es el que tiene hoy la ficha: no se guarda su historia, así que en un mes pasado se ve el tier actual de cada cliente. El aforo es el mismo para todos los perfiles: la plataforma no tiene una relación de atención por tier. Como todo el mapa, mide lo contratado.'
   }
 }
@@ -229,7 +239,7 @@ const clientFlow = ({ month = {} }) => {
     ],
     total: { label: 'Variación del mes', text: signed(isNum(c.altas) && isNum(c.bajas) ? c.altas - c.bajas : null) },
     source: `${TIMELINE_SOURCE} Abajo, los activos al cierre de cada mes: cada uno es el anterior más la variación.`,
-    caveat: 'La vista interanual compara el mismo mes en cada año con el centro operando: hasta que la plataforma cumpla dos años no hay con qué comparar. El mes en curso cuenta hasta hoy. Cuenta personas, no plata: el efecto en la facturación está en el MRR ganado y perdido.'
+    caveat: `La vista interanual compara el mismo mes en cada año con el centro operando: cada mes se puede comparar recién cuando el centro lo operó en dos años distintos (${LAUNCH_MONTH}, por ejemplo, recién desde ${LAUNCH_MONTH} de ${LAUNCH_YEAR + 1}). El mes en curso cuenta hasta hoy. Cuenta personas, no plata: el efecto en la facturación está en el MRR ganado y perdido.`
   }
 }
 
@@ -242,7 +252,7 @@ const exitsByReason = ({ exits: e = {} }) => {
     what: `Por qué se fueron los clientes en ${scope}. La ventana nombra lo que se pide; lo que se cuenta son los meses que existen desde ${LAUNCH}${isNum(e.requested) && isNum(e.months) && e.months < e.requested ? `: hoy, ${e.months}` : ''}.`,
     rows: rows.map(r => ({ label: r.pauses ? `${r.label} (${r.pauses} en pausa)` : r.label, text: `${r.value} · ${share(r.value, e.total)}` })),
     total: { label: 'Bajas de la ventana', text: count(e.total) },
-    source: 'El motivo es el que se eligió al dar la baja, con los nombres y el orden del catálogo de motivos de /bajas. Si dos bajas se superponen cuenta una sola, con el motivo de la que la abre. La comparación con la ventana anterior aparece solo cuando esa ventana entra entera desde el lanzamiento.',
+    source: 'El motivo es el que se eligió al dar la baja, con los nombres del catálogo de motivos de /bajas. Las filas van de más a menos bajas y, a igual cantidad, en el orden del catálogo. Si dos bajas se superponen cuenta una sola, con el motivo de la que la abre. La comparación con la ventana anterior aparece solo cuando esa ventana entra entera desde el lanzamiento.',
     caveat: 'Con una o dos bajas por mes, el orden de los motivos en una ventana corta es casi azar: para decidir sirve la ventana larga. El dato depende de elegir bien el motivo al dar la baja: si muchas quedan en "Otro", no dice nada. Las bajas en pausa temporal (según su seguimiento) cuentan igual y se marcan aparte.'
   }
 }

@@ -33,6 +33,8 @@ const base = { cfp, monthLabel: 'octubre 2026' }
 //   c alta de septiembre, 1× tarde, sin fecha de nacimiento
 //   d alta de octubre, 2× tarde, tier C
 //   e heredado que en octubre baja de 2× a 1× (mueve el MRR sin entrar ni salir)
+//   f alta de agosto con transporte y sin distancia (el transporte vale 0)
+//   g sin cargo: ocupa lugar sin ser de la cartera
 const person = (id, over = {}) => ({ id, firstName: id, lastName: 'X', clientType: 'regular', startDate: '2026-06-01', birthDate: '1941-03-02', cognitiveLevel: 'B', distanceRange: '0_to_2km', ...over })
 const planOf = (clientId, over = {}) => ({ clientId, effectiveFrom: '2026-06-01', frequency: 2, schedule: 'afternoon', hasTransport: false, assignedDays: ['tuesday', 'thursday'], ...over })
 const price = (frequency, schedule, priceNet) => ({ frequency, schedule, priceNet, effectiveYear: 2000, effectiveMonth: 0 })
@@ -42,7 +44,9 @@ const commercialModel = buildCommercial({
     person('b', { cognitiveLevel: 'D', birthDate: '1931-02-01' }),
     person('c', { startDate: '2026-09-10', cognitiveLevel: 'A', birthDate: null }),
     person('d', { startDate: '2026-10-05', cognitiveLevel: 'C' }),
-    person('e', { birthDate: '1950-08-20' })
+    person('e', { birthDate: '1950-08-20' }),
+    person('f', { startDate: '2026-08-03', distanceRange: null }),
+    person('g', { clientType: 'charity', startDate: '2026-07-01' })
   ],
   periods: [{ clientId: 'b', fromDate: '2026-10-15', toDate: null, reason: 'health_decline' }],
   followups: [{ clientId: 'b', stage: 'temporary_pause', deactivationDate: '2026-10-15' }],
@@ -52,7 +56,9 @@ const commercialModel = buildCommercial({
     planOf('c', { effectiveFrom: '2026-09-01', frequency: 1, assignedDays: ['friday'] }),
     planOf('d', { effectiveFrom: '2026-10-01', assignedDays: ['monday', 'wednesday'] }),
     planOf('e'),
-    planOf('e', { effectiveFrom: '2026-10-01', frequency: 1, assignedDays: ['tuesday'] })
+    planOf('e', { effectiveFrom: '2026-10-01', frequency: 1, assignedDays: ['tuesday'] }),
+    planOf('f', { effectiveFrom: '2026-08-01', hasTransport: true, assignedDays: ['monday', 'friday'] }),
+    planOf('g', { assignedDays: ['wednesday'] })
   ],
   discounts: [{ clientId: 'a', year: 2026, month: 9, discountPercent: 10 }],
   planPricing: [price(1, 'afternoon', 16393.44), price(2, 'afternoon', 24590.16), price(5, 'full_day', 66393.44)],

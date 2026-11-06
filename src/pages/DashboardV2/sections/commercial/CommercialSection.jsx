@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../../../context/AuthContext'
 import LoadState from '../../ui/LoadState'
 import { ExplainProvider } from '../../explain/ExplainContext'
@@ -6,6 +6,7 @@ import { useInvalidateMonthData, useMonthData } from '../../useMonthData'
 import { useToday } from '../../useToday'
 import { formatShortDate, monthLabelOf } from '../../format'
 import { loadCommercial, saveShiftCapacity } from '../../../../services/dashboardV2/commercialQueries'
+import { PLATFORM_START_ISO } from '../../../../services/dashboardV2/platform'
 import CommercialKpis from './CommercialKpis'
 import OccupancyCard from './OccupancyCard'
 import OccupancyHeatmap from './OccupancyHeatmap'
@@ -16,6 +17,10 @@ import ExitsByReasonCard, { windowSize } from './ExitsByReasonCard'
 import CohortRetentionCard from './CohortRetentionCard'
 
 export const COMMERCIAL_KEY = 'commercial'
+// Una sola carga trae todos los meses desde el lanzamiento: se identifica por el
+// primero. Así la clave no cambia al empezar un mes, y lo que está en pantalla se
+// queda mientras se rehace.
+const ALL_MONTHS = { year: Number(PLATFORM_START_ISO.slice(0, 4)), month: Number(PLATFORM_START_ISO.slice(5, 7)) - 1 }
 
 // Pestaña Comercial: cartera, MRR, churn, ocupación, composición, altas y bajas y
 // cohortes. Una sola carga trae todos los meses (commercialQueries.loadCommercial);
@@ -24,19 +29,18 @@ export default function CommercialSection({ selected }) {
   const { hasAccess } = useAuth()
   const invalidate = useInvalidateMonthData()
   const today = useToday()
-  // La carga se identifica por el mes de hoy: al empezar un mes nuevo se rehace
-  // (la línea de tiempo llega hasta el mes en curso).
-  const state = useMonthData(COMMERCIAL_KEY, loadCommercial, { year: Number(today.slice(0, 4)), month: Number(today.slice(5, 7)) - 1 })
-  // Y con la pestaña abierta de un día para el otro también: el mes en curso se
-  // corta en hoy, así que una baja o un reingreso de hoy recién entran mañana.
-  const dayRef = useRef(today)
-  useEffect(() => {
-    if (dayRef.current === today) return
-    dayRef.current = today
-    invalidate(COMMERCIAL_KEY)
-  }, [today, invalidate])
-
+  const state = useMonthData(COMMERCIAL_KEY, loadCommercial, ALL_MONTHS)
   const model = state.status === 'ready' ? state.data : null
+  // El modelo se rehace cuando es de un día anterior: el mes en curso se corta en el
+  // día con que se armó (una baja o un reingreso de hoy no estarían) y la línea de
+  // tiempo llega hasta el mes de ese día. Se compara contra ese día y no contra el
+  // último visto: el caché sobrevive al cambio de pestaña, y al volver otro día el
+  // modelo es de ayer. Con '<' y no '!==': useToday se entera del día nuevo hasta un
+  // minuto tarde, y el modelo recién cargado puede ser de un día después.
+  useEffect(() => {
+    if (model && model.timeline.today < today) invalidate(COMMERCIAL_KEY)
+  }, [model, today, invalidate])
+
   const index = model ? model.indexOf(selected.year, selected.month) : -1
   const month = index >= 0 ? model.month(index) : null
   const yearAgo = index >= 12 ? model.month(index - 12) : null
@@ -108,7 +112,8 @@ export default function CommercialSection({ selected }) {
       <LoadState
         state={state}
         loadingText="Cargando la cartera…"
-        emptyText="No hay datos comerciales para este mes."
+        // Un mes nuevo que el modelo de ayer todavía no tiene llega con la recarga
+        emptyText={state.refreshing ? 'Cargando la cartera…' : 'No hay datos comerciales para este mes.'}
         isEmpty={data => data.indexOf(selected.year, selected.month) < 0}
       >
         {() => month && (

@@ -48,18 +48,23 @@ export function indexDiscounts(rows) {
   return out
 }
 
-// Lo que vale un cliente en un mes. missing: 'plan' (sin plan), 'price' (sin precio
-// de lista para su plan) o 'distance' (con transporte y sin distancia): ese
-// componente queda en 0 y se avisa.
+// Lo que vale un cliente en un mes. missing: lo que falta para valuarlo, y el
+// componente que depende de eso queda en 0 (se avisa):
+//   'plan'      sin plan: el cliente entero vale 0
+//   'price'     sin precio de lista para su plan: la asistencia vale 0
+//   'distance'  con transporte y sin distancia: el transporte vale 0
+// Pueden faltar el precio y la distancia a la vez.
+export const MISSING_KINDS = ['plan', 'price', 'distance']
+
 export function monthlyValue({ plan, distanceRange, discountPercent }, { planPricing, transportPricing }, year, month) {
-  if (!plan) return { attendanceList: 0, discount: 0, attendance: 0, transport: 0, total: 0, discountPercent: 0, missing: 'plan' }
+  if (!plan) return { attendanceList: 0, discount: 0, attendance: 0, transport: 0, total: 0, discountPercent: 0, missing: ['plan'] }
   const pct = Math.min(100, Math.max(0, Number(discountPercent) || 0))
   const list = getPlanPriceSync(planPricing || [], plan.frequency, plan.schedule, year, month).priceNet || 0
   const attendance = list * (1 - pct / 100)
   let transport = 0
-  let missing = list > 0 ? null : 'price'
+  const missing = list > 0 ? [] : ['price']
   if (plan.hasTransport) {
-    if (!distanceRange) missing = missing || 'distance'
+    if (!distanceRange) missing.push('distance')
     else transport = getTransportPriceSync(transportPricing || [], plan.frequency, distanceRange, year, month).priceNet || 0
   }
   return { attendanceList: list, discount: list - attendance, attendance, transport, total: attendance + transport, discountPercent: pct, missing }
@@ -84,17 +89,18 @@ export function createValuer({ plans, discounts, planPricing, transportPricing, 
 }
 
 // Suma de valores, redondeada por componente para que cierre exacto:
-// lista − descuentos + transporte = total.
+// lista − descuentos + transporte = total. missing: cuántos clientes tienen cada
+// faltante (uno con precio y distancia faltantes cuenta en los dos).
 export function sumValues(values) {
   let list = 0
   let attendance = 0
   let transport = 0
-  let missing = 0
+  const missing = Object.fromEntries(MISSING_KINDS.map(k => [k, 0]))
   for (const v of values) {
     list += v.attendanceList
     attendance += v.attendance
     transport += v.transport
-    if (v.missing) missing++
+    for (const kind of v.missing || []) missing[kind]++
   }
   const att = Math.round(attendance)
   const trans = Math.round(transport)
@@ -104,22 +110,31 @@ export function sumValues(values) {
 
 // MRR de cada mes de la línea de tiempo (activityTimeline.buildTimeline):
 //   closing: los activos al cierre
-//   gained / lost: las altas y las bajas del mes, cada una por lo que vale ese mes
 //   opening: el MRR del cierre anterior (en el mes del lanzamiento, la base heredada)
-//   other: el residuo, lo que movió el MRR sin que nadie entrara ni saliera (cambios
-//          de plan, de precio de lista y de descuento):
+//   gained: las altas del mes, cada una por lo que vale ese mes
+//   lost: las bajas del mes, cada una por lo que aportaba a la apertura (lo que valía
+//         al cierre del mes anterior); quien entró y se fue en el mismo mes, por lo
+//         que vale ese mes (sumó y restó lo mismo)
+//   other: el residuo, lo que se movió el MRR de los que estaban y siguen (cambios de
+//          plan, de precio de lista y de descuento):
 //          opening + gained − lost + other = closing
 export function runRateSeries(timeline, valuer) {
   const out = []
   timeline.months.forEach((m, i) => {
     const valueOf = r => valuer(r.person.id, m.year, m.month)
+    // La apertura del mes del lanzamiento se valúa en ese mes; la de los demás es el
+    // cierre anterior, valuado en el mes anterior.
+    const prev = i > 0 ? timeline.months[i - 1] : null
+    const inOpening = new Set(m.opening.map(r => r.stretch))
+    const openingValueOf = r => (prev && inOpening.has(r.stretch) ? valuer(r.person.id, prev.year, prev.month) : valueOf(r))
     const closing = sumValues(m.active.map(valueOf))
     const gained = sumValues(m.entries.map(valueOf))
-    const lost = sumValues(m.exits.map(valueOf))
-    const opening = i > 0 ? out[i - 1].closing.total : sumValues(m.opening.map(valueOf)).total
+    const lost = sumValues(m.exits.map(openingValueOf))
+    const opening = prev ? out[i - 1].closing.total : sumValues(m.opening.map(valueOf)).total
     out.push({
       year: m.year,
       month: m.month,
+      partial: m.partial,
       closing,
       gained,
       lost,
@@ -131,17 +146,21 @@ export function runRateSeries(timeline, valuer) {
 }
 
 // MRR ganado y perdido en una ventana de hasta `size` meses que cierra en `index`,
-// recortada al lanzamiento.
+// recortada al lanzamiento. Los totales llegan hasta hoy; los promedios usan solo los
+// meses cerrados (avgMonths): el mes en curso tiraría el promedio para abajo.
 export function runRateWindow(series, index, size = 12) {
   const list = series.slice(Math.max(0, index - size + 1), index + 1)
-  const gained = list.reduce((s, r) => s + r.gained.total, 0)
-  const lost = list.reduce((s, r) => s + r.lost.total, 0)
+  const total = (rows, key) => rows.reduce((s, r) => s + r[key].total, 0)
+  const closed = list.filter(r => !r.partial)
+  const gained = total(list, 'gained')
+  const lost = total(list, 'lost')
   return {
     months: list.length,
     gained,
     lost,
     net: gained - lost,
-    avgGained: list.length ? gained / list.length : null,
-    avgLost: list.length ? lost / list.length : null
+    avgMonths: closed.length,
+    avgGained: closed.length ? total(closed, 'gained') / closed.length : null,
+    avgLost: closed.length ? total(closed, 'lost') / closed.length : null
   }
 }

@@ -1,6 +1,6 @@
 import {
   isCommercialClient, cleanPeriods, clientStretches, buildTimeline, monthRange, shiftMonth, churnWindow,
-  monthChurn, tenureStats, flowSeries, sameMonthSeries, exitsByReason, cohortRetention, monthIndexOf,
+  monthChurn, tenureStats, flowSeries, sameMonthSeries, exitsByReason, cohortRetention, monthIndexOf, occupantsOn,
   ENTRY_INHERITED, ENTRY_NEW, ENTRY_RETURN
 } from './activityTimeline'
 
@@ -142,6 +142,26 @@ describe('clientStretches', () => {
   })
 })
 
+describe('quién ocupa un lugar', () => {
+  test('además de la cartera, los no facturables y los que están a prueba', () => {
+    // 12 de agosto: t1 está a prueba y c1 es sin cargo; ninguno es de la cartera
+    expect(occupantsOn(timeline.occupants, '2026-08-12').map(o => o.id).sort()).toEqual(['c1', 'f2', 'h1', 'n1', 'n2', 't1'])
+    expect(ids(timeline.months[2].active)).not.toContain('t1')
+    // Las bajas y reingresos salen de los mismos períodos: h3 vuelve el 29 de septiembre
+    expect(occupantsOn(timeline.occupants, '2026-09-29').map(o => o.id)).toContain('h3')
+    expect(occupantsOn(timeline.occupants, '2026-08-16').map(o => o.id)).not.toContain('t1')
+  })
+
+  test('la prueba de quien se quedó ocupa antes de su fecha de ingreso', () => {
+    const v1 = client('v1', { startDate: '2026-10-01', trialStartedAt: '2026-09-21', trialConvertedAt: '2026-09-30' })
+    const t = buildTimeline({ clients: [v1], periods: [], followups: [] }, { today: TODAY })
+    // La cartera lo cuenta desde octubre; el lugar lo ocupa desde la prueba
+    expect(t.months[3].counts.closing).toBe(0)
+    expect(occupantsOn(t.occupants, '2026-09-30').map(o => o.id)).toEqual(['v1'])
+    expect(occupantsOn(t.occupants, '2026-09-20')).toEqual([])
+  })
+})
+
 describe('meses', () => {
   test('del lanzamiento al mes de hoy', () => {
     expect(monthRange('2026-11-06')).toHaveLength(6)
@@ -196,6 +216,15 @@ describe('churn, permanencia y flujo', () => {
     expect(short.prev.churn).toBeCloseTo((2 / 3) * 100)
     expect(short.delta).toBeCloseTo(short.churn - short.prev.churn)
     expect(monthChurn({ counts: { opening: 0, bajas: 0 } })).toBeNull()
+  })
+
+  test('el promedio de bajas por mes usa solo los meses cerrados', () => {
+    // Jun–oct cerrados con 3 bajas; noviembre (en curso) no entra al promedio
+    expect(churnWindow(timeline.months, 5, 12)).toMatchObject({ avgMonths: 5, avgBajas: 3 / 5 })
+    // En un mes cerrado, el mes entra en su propio promedio
+    expect(churnWindow(timeline.months, 4, 12)).toMatchObject({ avgMonths: 5, avgBajas: 3 / 5 })
+    // Con solo el mes en curso no hay promedio
+    expect(churnWindow(timeline.months.slice(5), 0, 12)).toMatchObject({ avgMonths: 0, avgBajas: null })
   })
 
   test('permanencia desde la última alta; los heredados aparte', () => {

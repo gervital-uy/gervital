@@ -12,6 +12,14 @@ import { signed } from './commercialText'
 //     mueve las torres.
 export const FLOW_COLORS = { entries: '#0d9488', exits: '#e11d48', net: '#475569' }
 
+// Hacia dónde se abre el globo de la columna `index` de `n`: se decide por dónde cae
+// la columna en el ancho, no por su número (con dos columnas, la segunda ya está a la
+// derecha). Pegado a una punta se abre hacia adentro; en el medio, centrado.
+export function tooltipShift(index, n) {
+  const at = (index + 0.5) / n
+  return at <= 0.3 ? '-8%' : at >= 0.7 ? '-92%' : '-50%'
+}
+
 // rows: [{ key, label, entries, exits, closing, newEntries, returns, partial }]
 // mode: 'months' (meses seguidos) o 'years' (el mismo mes en cada año).
 export default function ClientFlowChart({ rows, showTrend, mode = 'months' }) {
@@ -130,8 +138,9 @@ export default function ClientFlowChart({ rows, showTrend, mode = 'months' }) {
 
       {tip && (
         <div
+          role="tooltip"
           className="absolute z-10 pointer-events-none"
-          style={{ left: `${((hover + 0.5) / n) * 100}%`, top: 0, transform: `translate(${hover <= 1 ? '-8%' : hover >= n - 2 ? '-92%' : '-50%'}, -6px)` }}
+          style={{ left: `${((hover + 0.5) / n) * 100}%`, top: 0, transform: `translate(${tooltipShift(hover, n)}, -6px)` }}
         >
           <div className="bg-white rounded-xl shadow-lg border border-gray-100 px-3 py-2 whitespace-nowrap">
             <p className="text-[11px] font-semibold text-gray-900 mb-1">{tip.label}{tip.partial ? ' · en curso, hasta hoy' : ''}</p>

@@ -108,7 +108,7 @@ export function clientStretches(client, periods, pauseDates = []) {
   return out
 }
 
-const isActiveOn = (stretch, day) => stretch.from <= day && (stretch.to == null || stretch.to > day)
+export const isActiveOn = (stretch, day) => stretch.from <= day && (stretch.to == null || stretch.to > day)
 
 // Un mes de la línea de tiempo. Las listas son de { person, stretch }:
 //   opening:   la base inicial (activos al cierre del mes anterior, más los
@@ -156,8 +156,24 @@ export function monthActivity(people, year, month, today) {
   }
 }
 
+// Quién ocupa un lugar en el centro, para la ocupación: todos los clientes, no solo
+// la cartera. Los no facturables y los que están a prueba también vienen; y la
+// prueba de quien después se quedó también ocupa, aunque la cartera lo cuente recién
+// desde su fecha de ingreso: cada uno ocupa desde lo primero entre su ingreso y el
+// inicio de su prueba. Las bajas y los reingresos salen de los mismos períodos.
+function occupantsOf(clients, periodsBy) {
+  return (clients || []).map(client => {
+    const start = [isoDay(client.startDate), isoDay(client.trialStartedAt)].filter(Boolean).sort()[0] || null
+    return { id: client.id, client, stretches: clientStretches({ startDate: start }, periodsBy.get(client.id)) }
+  })
+}
+
+// Los que ocupan un lugar en un día: [{ id, client }].
+export const occupantsOn = (occupants, day) => occupants.filter(o => o.stretches.some(s => isActiveOn(s, day)))
+
 // La línea de tiempo entera, del lanzamiento al mes de hoy.
 // sources: { clients (clients_full), periods, followups }
+//   → { people (la cartera), occupants (todos los que ocupan un lugar), months, today }
 export function buildTimeline({ clients, periods, followups }, { today }) {
   const periodsBy = new Map()
   for (const p of periods || []) {
@@ -176,7 +192,7 @@ export function buildTimeline({ clients, periods, followups }, { today }) {
     stretches: clientStretches(client, periodsBy.get(client.id), pausesBy.get(client.id))
   }))
   const months = monthRange(today).map(({ year, month }) => monthActivity(people, year, month, today))
-  return { people, months, today }
+  return { people, occupants: occupantsOf(clients, periodsBy), months, today }
 }
 
 export const monthIndexOf = (timeline, year, month) => timeline.months.findIndex(m => m.year === year && m.month === month)
@@ -184,7 +200,8 @@ export const monthIndexOf = (timeline, year, month) => timeline.months.findIndex
 // Churn de una ventana de hasta `size` meses que cierra en el mes `index`, recortada
 // a los meses que la plataforma lleva operando: bajas de la ventana sobre la cartera
 // media (los activos al cierre de cada mes). La ventana anterior, del mismo largo,
-// solo existe cuando entra entera desde el lanzamiento.
+// solo existe cuando entra entera desde el lanzamiento. El promedio de bajas por mes
+// usa solo los meses cerrados (avgMonths): el mes en curso lo tiraría para abajo.
 export function churnWindow(months, index, size = 12) {
   const span = Math.min(size, index + 1)
   const stat = list => {
@@ -192,13 +209,16 @@ export function churnWindow(months, index, size = 12) {
     const baseMedia = list.length ? sum(list, m => m.counts.closing) / list.length : 0
     return { bajas, baseMedia, churn: baseMedia > 0 ? (bajas / baseMedia) * 100 : null }
   }
-  const current = stat(months.slice(index - span + 1, index + 1))
+  const list = months.slice(index - span + 1, index + 1)
+  const current = stat(list)
+  const closed = list.filter(m => !m.partial)
   const prevStart = index - 2 * span + 1
   const prev = prevStart >= 0 ? stat(months.slice(prevStart, index - span + 1)) : null
   return {
     months: span,
     ...current,
-    avgBajas: current.bajas / span,
+    avgMonths: closed.length,
+    avgBajas: closed.length ? sum(closed, m => m.counts.bajas) / closed.length : null,
     prev,
     delta: prev?.churn != null && current.churn != null ? current.churn - prev.churn : null
   }

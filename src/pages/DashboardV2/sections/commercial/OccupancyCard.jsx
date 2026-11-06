@@ -5,8 +5,9 @@ import { DEFAULT_SHIFT_CAPACITY, SHIFT_CAPACITY_RANGE } from '../../../../servic
 import { formatDecimal, money, pctText } from '../../format'
 import { CARD } from './commercialText'
 
-// Un cuadrito por lugar del turno: los llenos son los vendidos en un día promedio y
-// los vacíos, los que quedan por vender. Con un aforo chico se cuentan con el ojo.
+// Un cuadrito por lugar del turno: los llenos son los ocupados en un día promedio y
+// los vacíos, los que quedan libres. Con un aforo chico se cuentan con el ojo; el
+// rango del aforo (hasta 60) es el que entra en el celular sin volverse una raya.
 function ShiftSeats({ shift, capacity }) {
   const sold = Math.round(shift.perDay)
   const filled = Math.min(capacity, sold)
@@ -19,7 +20,7 @@ function ShiftSeats({ shift, capacity }) {
       <div
         className={`order-last sm:order-none basis-full sm:basis-auto sm:flex-1 min-w-0 grid ${capacity > 40 ? 'gap-px' : 'gap-[3px]'}`}
         style={{ gridTemplateColumns: `repeat(${capacity}, minmax(0, 1fr))` }}
-        title={`${formatDecimal(shift.perDay)} de ${capacity} lugares vendidos en un día promedio`}
+        title={`${formatDecimal(shift.perDay)} de ${capacity} lugares ocupados en un día promedio`}
       >
         {Array.from({ length: capacity }, (_, k) => (
           <span key={k} className={`aspect-square rounded-[2px] ${k < filled ? 'bg-emerald-500' : 'bg-gray-200'}`} />
@@ -41,7 +42,8 @@ const clamp = v => Math.max(MIN, Math.min(MAX, v))
 // valores (la tarjeta y el mapa de calor se recalculan); guardarlo es otra acción.
 // El campo es de texto: un input numérico dibuja sus propias flechitas, que
 // duplicarían los botones. Se valida al salir del campo, no mientras se tipea.
-function CapacityControl({ value, onChange }) {
+// disabled: mientras se guarda, para que el resultado no pise un valor nuevo a prueba.
+function CapacityControl({ value, onChange, disabled = false }) {
   const [draft, setDraft] = useState(null)
   const step = d => { setDraft(null); onChange(clamp(value + d)) }
   const commit = () => {
@@ -53,7 +55,7 @@ function CapacityControl({ value, onChange }) {
     <button
       type="button"
       onClick={() => step(d)}
-      disabled={d < 0 ? value <= MIN : value >= MAX}
+      disabled={disabled || (d < 0 ? value <= MIN : value >= MAX)}
       aria-label={label}
       className="w-6 h-6 shrink-0 rounded-md border border-gray-200 bg-white text-gray-500 text-[13px] leading-none flex items-center justify-center transition-colors hover:border-gray-300 hover:text-gray-900 disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
     >
@@ -69,11 +71,12 @@ function CapacityControl({ value, onChange }) {
           type="text"
           inputMode="numeric"
           value={draft ?? String(value)}
-          onChange={e => setDraft(e.target.value.replace(/[^0-9]/g, '').slice(0, 3))}
+          onChange={e => setDraft(e.target.value.replace(/[^0-9]/g, '').slice(0, String(MAX).length))}
           onBlur={commit}
           onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
           aria-label="Aforo por turno"
-          className="w-[50px] text-center text-[17px] leading-none font-semibold tabular-nums text-gray-900 bg-white border border-gray-200 rounded-md py-1 focus:outline-none focus:border-indigo-400"
+          disabled={disabled}
+          className="w-[50px] disabled:opacity-50 text-center text-[17px] leading-none font-semibold tabular-nums text-gray-900 bg-white border border-gray-200 rounded-md py-1 focus:outline-none focus:border-indigo-400"
         />
         {stepButton(1, '+', 'Subir el aforo')}
       </div>
@@ -116,7 +119,7 @@ function CapacityStatus({ occupancy, savedCapacity, isDefault, canSave, save, on
   )
 }
 
-// Ocupación de la capacidad: qué parte de los lugares de cada turno está vendida y
+// Ocupación de la capacidad: qué parte de los lugares de cada turno está ocupada y
 // cuánto MRR rinde cada lugar. occupancy: la del aforo guardado o la de uno a prueba.
 export default function OccupancyCard({ occupancy, monthLabel, savedCapacity, isDefault, canSave, save, onTry, onSave, onDiscard }) {
   const general = occupancy.delta
@@ -132,7 +135,7 @@ export default function OccupancyCard({ occupancy, monthLabel, savedCapacity, is
             <span className="capitalize">{monthLabel}</span> · {occupancy.workdays} días hábiles
           </span>
         </div>
-        <CapacityControl value={occupancy.capacity} onChange={onTry} />
+        <CapacityControl value={occupancy.capacity} onChange={onTry} disabled={save.status === 'saving'} />
       </div>
 
       <div className="px-5 pb-4 flex flex-col gap-3">

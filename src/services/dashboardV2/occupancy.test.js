@@ -1,4 +1,4 @@
-import { parseShiftCapacity, isValidShiftCapacity, weekdayCounts, occupancy, DEFAULT_SHIFT_CAPACITY } from './occupancy'
+import { parseShiftCapacity, isValidShiftCapacity, weekdayCounts, occupancy, DEFAULT_SHIFT_CAPACITY, SHIFT_CAPACITY_RANGE } from './occupancy'
 
 describe('aforo', () => {
   test('lo guardado si es un entero válido; si no, el de por defecto marcado', () => {
@@ -7,8 +7,15 @@ describe('aforo', () => {
     for (const v of [null, undefined, '', 'abc', '0', '12.5', '500', '-3']) {
       expect(parseShiftCapacity(v)).toEqual({ capacity: DEFAULT_SHIFT_CAPACITY, isDefault: true })
     }
-    expect(isValidShiftCapacity('1')).toBe(true)
-    expect(isValidShiftCapacity('201')).toBe(false)
+  })
+
+  test('el rango es el que el gráfico de un cuadrito por lugar puede dibujar', () => {
+    expect(SHIFT_CAPACITY_RANGE).toEqual({ min: 5, max: 60 })
+    expect(isValidShiftCapacity('5')).toBe(true)
+    expect(isValidShiftCapacity('60')).toBe(true)
+    expect(isValidShiftCapacity('4')).toBe(false)
+    expect(isValidShiftCapacity('61')).toBe(false)
+    expect(isValidShiftCapacity(DEFAULT_SHIFT_CAPACITY)).toBe(true)
   })
 })
 
@@ -21,12 +28,13 @@ test('días hábiles de cada día de semana en el mes', () => {
 
 describe('ocupación de octubre 2026', () => {
   const seats = [
-    { schedule: 'full_day', assignedDays: ['tuesday', 'thursday'], tier: 'C' },
-    { schedule: 'morning', assignedDays: ['tuesday'], tier: 'A' },
-    { schedule: 'afternoon', assignedDays: ['monday', 'thursday', 'thursday', 'saturday'], tier: 'D' },
-    { schedule: 'afternoon', assignedDays: ['thursday'], tier: null },
+    { schedule: 'full_day', assignedDays: ['tuesday', 'thursday'], tier: 'C', paying: true },
+    { schedule: 'morning', assignedDays: ['tuesday'], tier: 'A', paying: true },
+    { schedule: 'afternoon', assignedDays: ['monday', 'thursday', 'thursday', 'saturday'], tier: 'D', paying: true },
+    // No paga (no facturable o a prueba): ocupa lugar, no es un lugar vendido
+    { schedule: 'afternoon', assignedDays: ['thursday'], tier: null, paying: false },
     // Sin plan: no ocupa nada
-    { schedule: undefined, assignedDays: undefined, tier: 'B' }
+    { schedule: undefined, assignedDays: undefined, tier: 'B', paying: true }
   ]
   const o = occupancy(seats, { year: 2026, month: 9, capacity: 10 })
   const [am, pm] = o.shifts
@@ -41,11 +49,14 @@ describe('ocupación de octubre 2026', () => {
     expect(pm.cells[3]).toMatchObject({ dependents: 2, free: 7, pct: 30, dates: 5, label: 'Jueves' })
   })
 
-  test('lugares vendidos del mes, pesados por las veces que cae cada día', () => {
+  test('lugares ocupados y vendidos del mes, pesados por las veces que cae cada día', () => {
     // AM: martes 2 × 4 + jueves 1 × 5; PM: lunes 4 + martes 4 + jueves 3 × 5
-    expect(am.sold).toBe(13)
-    expect(pm.sold).toBe(23)
-    expect(o).toMatchObject({ capacity: 10, workdays: 22, seatsPerShift: 220, seatsMonth: 440, sold: 36 })
+    expect(am).toMatchObject({ taken: 13, sold: 13 })
+    // De los tres del jueves a la tarde, uno no paga: 5 lugares ocupados no vendidos
+    expect(pm).toMatchObject({ taken: 23, sold: 18 })
+    expect(pm.cells[3]).toMatchObject({ users: 3, paying: 2 })
+    expect(o).toMatchObject({ capacity: 10, workdays: 22, seatsPerShift: 220, seatsMonth: 440, taken: 36, sold: 31 })
+    // La ocupación es sobre los ocupados, paguen o no
     expect(am.pct).toBeCloseTo((13 / 220) * 100)
     expect(o.pct).toBeCloseTo((36 / 440) * 100)
     expect(pm.perDay).toBeCloseTo(23 / 22)
