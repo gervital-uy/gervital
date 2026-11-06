@@ -63,12 +63,17 @@ export function isPastDue(year, month, today) {
   return !!today && today > `${year}-${pad(month + 1)}-${pad(OVERDUE_AFTER_DAY)}`
 }
 
-// IVA contenido en un importe con IVA, línea por línea: asistencia al 22% y
-// transporte al 10%, con los netos redondeados como los emite biller.
+// IVA por línea: asistencia al 22% y transporte al 10%. Nunca una sola tasa.
+export const VAT = { attendance: 1.22, transport: 1.10 }
+
+// Neto de un importe con IVA, redondeado como lo emite biller.
+export const netOfGross = (gross, rate) => Math.round(num(gross) / rate)
+
+// IVA contenido en un importe con IVA, línea por línea.
 export function ivaOf({ attGross, transGross }) {
   const att = num(attGross)
   const trans = num(transGross)
-  return (att - Math.round(att / 1.22)) + (trans - Math.round(trans / 1.10))
+  return (att - netOfGross(att, VAT.attendance)) + (trans - netOfGross(trans, VAT.transport))
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i
