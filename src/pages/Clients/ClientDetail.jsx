@@ -36,6 +36,7 @@ import {
   getClientFollowups,
   getClientPromotions,
   collectPromo,
+  uncollectPromo,
   cancelPromo
 } from '../../services/api'
 import { dayStyle, dayTooltip, outcomePreview } from '../../services/attendance/absenceModel'
@@ -1179,13 +1180,6 @@ function MonthCard({ client, year, month, invoice, allInvoices, promotions, atte
     } catch (e) { window.alert(e.message) }
   }
 
-  const handleUndoPayment = async () => {
-    setPaymentDropOpen(false)
-    // No sale de un modal con lugar para el error: se muestra suelto.
-    try { await withProcessing(() => unmarkMonthPaid(client.id, year, month)) }
-    catch (e) { window.alert(e.message) }
-  }
-
   const canRemoveDiscount = invoice?.paymentStatus === 'pending' && invoice?.invoiceStatus === 'pending'
   const handleRemoveDiscount = async () => {
     try { await removePlanDiscount(client.id, year, month, year, month); await onRefresh() }
@@ -1209,6 +1203,25 @@ function MonthCard({ client, year, month, invoice, allInvoices, promotions, atte
     if (!window.confirm(`¿Cancelar la promo ${promoRangeLabel}?\n\n${undo}`)) return
     try { await withProcessing(() => cancelPromo(promo.id)) }
     catch (e) { window.alert(e.message) }
+  }
+
+  // En el mes ancla de una promo, deshacer el cobro deshace el del paquete entero
+  // (la promo y su descuento siguen): deshacer sólo el ancla dejaba los meses
+  // siguientes como prepagos de un cobro que ya no existe, y la promo trabada.
+  const isPromoAnchorPaid = !!promo && promoIndex === 1 && isPaid
+  const handleUndoPayment = async () => {
+    setPaymentDropOpen(false)
+    if (isPromoAnchorPaid) {
+      const monthsBack = promoLength === 1 ? 'el mes vuelve' : `los ${promoLength} meses vuelven`
+      const amount = formatCurrency(promo.paidAmount ?? invoice.paidAmount)
+      if (!window.confirm(`¿Deshacer el cobro de la promo ${promoRangeLabel}?\n\nSe deshace el cobro de ${amount} y ${monthsBack} a pendiente. La promo y su descuento se mantienen: se vuelve a cobrar desde este mes.`)) return
+    }
+    // No sale de un modal con lugar para el error: se muestra suelto.
+    try {
+      await withProcessing(() => isPromoAnchorPaid
+        ? uncollectPromo(promo.id)
+        : unmarkMonthPaid(client.id, year, month))
+    } catch (e) { window.alert(e.message) }
   }
 
   // Cobrar el mes ancla de una promo cobra el paquete entero de una.
@@ -1306,9 +1319,11 @@ function MonthCard({ client, year, month, invoice, allInvoices, promotions, atte
                       </div>
                       <button
                         onClick={handleUndoPayment}
-                        className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                        disabled={isPromoAnchorPaid && !canManagePromo}
+                        title={isPromoAnchorPaid && !canManagePromo ? 'Sólo un superadmin puede deshacer el cobro de una promo' : undefined}
+                        className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 disabled:text-gray-400 disabled:hover:bg-transparent disabled:cursor-not-allowed"
                       >
-                        Deshacer cobro
+                        {isPromoAnchorPaid ? 'Deshacer cobro de la promo' : 'Deshacer cobro'}
                       </button>
                     </>
                   ) : (

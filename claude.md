@@ -296,7 +296,9 @@ Una promo se cobra **entera desde su mes ancla, nunca mes por mes** (mig 092):
 usa `mark_month_paid_core` (mismo cuerpo, sin la guarda y sin EXECUTE para
 clientes). Todo flujo de cobro del front que pueda tocar un mes ancla tiene que ir
 por `collectPromo`: la ficha del cliente y el cobro masivo del dashboard
-(`buildBulkRows` en `src/services/dashboard/bulkRows.js`) ya lo hacen.
+(`buildBulkRows` en `src/services/dashboard/bulkRows.js`) ya lo hacen. Lo mismo al
+revés: deshacer el cobro de un ancla va por `uncollectPromo`, nunca por
+`unmarkMonthPaid` (dejaría los meses 2..N `prepaid` sin cobro y la promo trabada).
 
 El total del paquete es **cobranza, no facturación**: `calculate_month_billing`
 no lo conoce y la e-factura de cada mes sigue siendo el servicio de ese mes.

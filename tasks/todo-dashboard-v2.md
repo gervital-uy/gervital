@@ -55,12 +55,10 @@ rendimiento también se descartan: se calcula en el cliente con lo que ya existe
       revertir relee también el ancla, un mes facturado sin cobro no se cobra desde acá, reparación de un paquete roto
       (la ficha deshace solo el ancla: bug de legacy, ClientDetail.jsx:1185), el día y el mes avanzan con la pestaña abierta,
       una recarga fallida no tapa lo registrado.
-- [~] B1 — facturación de meses de promo: en el repo (303f60a: edge function biller + invoiceAmounts.js + llamadores de
-      legacy). **Falta deployar la edge function** (pide OK). La v2 no depende del deploy: manda los montos explícitos.
-      **Orden de salida:** deployar `biller` antes de (o junto con) publicar el front con 303f60a. Si no, el lote del
-      dashboard legacy muestra el servicio del ancla (27.000) pero emite lo cobrado (81.000). Hasta deployar, el ancla de
-      oct-26 de la promo 426057b2 (81.000 cobrados, servicio 27.000) se factura desde la v2, o desde la ficha
-      corrigiendo el monto a mano: el lote y la ficha de producción la facturarían por 81.000.
+- [x] B1 — facturación de meses de promo (303f60a: edge function biller + invoiceAmounts.js + llamadores de legacy).
+      `biller` v19 deployada el 2026-11-06 con B1 + 436e2ee (no da por emitida una factura que no se pudo guardar).
+      Antes del deploy el error ya había salido una vez: A-3475 (sep-26, 96.360 = el paquete). Pendiente: publicar el
+      front (la ficha de producción todavía propone lo cobrado en el ancla de una promo).
 - [x] Fase 4 — Facturación (sin emitir contra producción: la prueba queda pendiente)
       Emitir una (hoja con lo que se imprime, total, IVA y fecha fija) o en lote (de a una, 1,1 s entre llamadas, detener,
       reintentar). Fecha = último día hábil del mes y no antes. Antes de cada factura relee el mes y recalcula: no emite un
@@ -313,7 +311,8 @@ src/services/dashboardV2/   (cada uno con su *.test.js)
 | B15 | `get_attendance_matrix`, `get_commercial_roster`, `get_transport_month_economics` | RPC | Solo por rendimiento | Llevan guarda explícita: `calculate_month_billing` corre con permisos elevados y sin chequeo de rol |
 
 **Bugs de legacy a arreglar aparte** (v2 no los arrastra y legacy no se toca):
-- "Deshacer cobro" en `ClientDetail.jsx:1182-1186, 1308` llama a `unmarkMonthPaid` sobre un ancla de promo cuando debería usar `uncollectPromo`.
+- [x] "Deshacer cobro" en la ficha llamaba a `unmarkMonthPaid` sobre un ancla de promo y dejaba el paquete trabado. Ahora
+      usa `uncollectPromo` (con confirmación; solo superadmin, como la RPC). 2026-11-06: no había paquetes trabados en la base.
 - `get_dashboard_finance_series` filtra `deleted_at IS NULL`, así que el previsto de meses pasados pierde a los clientes que después se dieron de baja.
 - La tasa de `get_attendance_stats` está mal.
 - `REASON_LABELS` no tiene la clave `problema_de_salud_transitorio`.
