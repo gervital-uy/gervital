@@ -131,6 +131,8 @@ describe('buildCommercial', () => {
     expect(oct.exitsByReason(12).rows).toEqual([{ key: 'health_decline', label: 'Deterioro de salud', color: '#dc2626', sortOrder: 3, value: 1, pauses: 0 }])
     expect(oct.cohorts('month').rows.find(r => r.key === '2026-09').size).toBe(1)
     expect(model.month(model.indexOf(2026, 9))).toBe(oct)
+    // El catálogo viaja con el modelo para nombrar el motivo de cada persona
+    expect(model.reasons).toEqual(sources.reasons)
   })
 
   test('probar otro aforo recalcula la ocupación sin tocar la guardada', () => {

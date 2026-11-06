@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import DashboardV2 from './DashboardV2'
 
 // react-router-dom 7 solo publica `exports`, que el resolver de jest de CRA no lee:
@@ -13,6 +13,9 @@ jest.mock('../../components/ui/MonthNavigator', () => () => null)
 // Gestión CFP lee el padrón real; acá alcanza con uno vacío.
 jest.mock('../../services/dashboardV2/queries', () => ({ loadPadron: jest.fn() }))
 const { loadPadron } = jest.requireMock('../../services/dashboardV2/queries')
+// Comercial se carga de una sola vez; acá alcanza con que nunca termine.
+jest.mock('../../services/dashboardV2/commercialQueries', () => ({ loadCommercial: jest.fn(), saveShiftCapacity: jest.fn() }))
+const { loadCommercial } = jest.requireMock('../../services/dashboardV2/commercialQueries')
 
 let mockRole = 'superadmin'
 jest.mock('../../context/AuthContext', () => {
@@ -44,6 +47,17 @@ describe('DashboardV2 — shell', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Finanzas' }))
     expect(screen.getByText('Punto de equilibrio')).toBeInTheDocument()
     expect(screen.queryByText('Cobranza y facturación')).not.toBeInTheDocument()
+  })
+
+  test('Comercial ya no es un placeholder: abre la sección real', async () => {
+    loadPadron.mockImplementation(() => new Promise(() => {}))
+    loadCommercial.mockImplementation(() => new Promise(() => {}))
+    mockRole = 'superadmin'
+    render(<DashboardV2 />)
+    fireEvent.click(screen.getByRole('button', { name: 'Comercial' }))
+    expect(screen.getByText('Cargando la cartera…')).toBeInTheDocument()
+    expect(screen.queryByText(/próximamente/i)).not.toBeInTheDocument()
+    await waitFor(() => expect(loadCommercial).toHaveBeenCalledTimes(1))
   })
 
   test('cada pestaña respeta su feature: admin ve solo Gestión CFP y Asistencia', async () => {

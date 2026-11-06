@@ -231,6 +231,8 @@ export function buildCommercial(sources, { today }) {
     runRate,
     capacity,
     isDefaultCapacity: isDefault,
+    // El catálogo de motivos de baja (nombre y color), para nombrar el motivo de cada persona
+    reasons,
     indexOf: (year, month) => monthIndexOf(timeline, year, month),
     month: index => {
       if (index < 0 || index >= timeline.months.length) return null

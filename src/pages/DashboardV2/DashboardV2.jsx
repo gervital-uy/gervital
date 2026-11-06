@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext'
 import MonthNavigator from '../../components/ui/MonthNavigator'
 import SectionPlaceholder from './SectionPlaceholder'
 import CfpSection from './sections/cfp/CfpSection'
+import CommercialSection from './sections/commercial/CommercialSection'
 import { MonthDataProvider } from './useMonthData'
 import { PLATFORM_START, monthStartOf } from './monthWindow'
 import { useToday } from './useToday'
@@ -36,12 +37,7 @@ const SECTIONS = [
     id: 'commercial',
     label: 'Comercial',
     feature: 'dashboard_financials',
-    upcoming: [
-      { title: 'Cartera', hint: 'Activos, MRR, churn, MRR ganado y perdido, permanencia.' },
-      { title: 'Ocupación', hint: 'Cupos por turno y mapa de calor por día.' },
-      { title: 'Composición y aporte', hint: 'La base por plan, horario, tier y edad, y cuánto factura cada segmento.' },
-      { title: 'Altas, bajas y retención', hint: 'Flujo de clientes, bajas por motivo y cohortes.' }
-    ]
+    Component: CommercialSection
   },
   {
     id: 'attendance',
