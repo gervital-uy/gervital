@@ -6,6 +6,7 @@ import { getSetting, setSetting } from '../settings/appSettingsService'
 import { todayStr } from '../../utils/date'
 import { buildCommercial } from './commercialView'
 import { isValidShiftCapacity, SHIFT_CAPACITY_KEY, SHIFT_CAPACITY_RANGE } from './occupancy'
+import { unwrap } from './queries'
 
 // Lecturas en bloque de la pestaña Comercial. Todo sale de lo que ya existe en la
 // base (la v2 no agrega funciones, vistas ni tablas) y se calcula en el navegador:
@@ -13,11 +14,6 @@ import { isValidShiftCapacity, SHIFT_CAPACITY_KEY, SHIFT_CAPACITY_RANGE } from '
 // No se usa get_churn_board: además de leer, crea tarjetas de seguimiento.
 
 const CLIENT_FIELDS = 'id, firstName, lastName, avatarUrl, birthDate, cognitiveLevel, startDate, clientType, deactivationDate, trialStartedAt, trialConvertedAt, address'
-
-const unwrap = ({ data, error }) => {
-  if (error) throw new Error(error.message)
-  return data || []
-}
 
 // PostgREST corta cada respuesta en 1.000 filas. client_plans suma una versión por
 // cliente casi todos los meses, así que se lee por páginas (con un orden fijo para
