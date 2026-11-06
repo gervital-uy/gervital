@@ -244,6 +244,7 @@ describe('buildBenefits — KPIs del mes', () => {
   test('conteos de los chips y acuerdos vigentes fuera del padrón', () => {
     expect(view.kpis.counts).toEqual({ current: 7, expiring: 3, upcoming: 4 })
     expect(view.kpis.offPadron).toBe(1)
+    expect(view.kpis.upcomingAway).toBe(0)
     expect(rowOf('pX')).toMatchObject({ state: 'expiring', inPadron: false, monthAmount: null, monthDiscount: null })
   })
 
@@ -272,6 +273,52 @@ describe('buildBenefits — KPIs del mes', () => {
     expect(empty.kpis).toMatchObject({ base: 0, withBenefit: 0, coveragePct: null, previousCoverage: null })
     expect(empty.kpis.discount).toMatchObject({ total: 0, sharePct: null })
     expect(empty.rows).toEqual([])
+  })
+})
+
+// Dar de baja no borra los descuentos ni las promos de meses futuros: en Próximos
+// solo queda lo de un cliente que va a estar activo algún día del acuerdo.
+describe('próximos de clientes dados de baja', () => {
+  const awayPromotions = [...promotions, promo('pY', 'y', [2026, 11], [2027, 1])]
+  const awayLedger = [
+    ...ledger,
+    // y: baja abierta desde el 15-11, con descuento ene–mar
+    month('y', 2027, 0, 10), month('y', 2027, 1, 10), month('y', 2027, 2, 10),
+    // r: pausa hasta el 01-02, con descuento ene–mar (vuelve en febrero)
+    month('r', 2027, 0, 10), month('r', 2027, 1, 10), month('r', 2027, 2, 10),
+    // w: pausa hasta el 01-04, con descuento ene–mar (no vuelve antes de que termine)
+    month('w', 2027, 0, 10), month('w', 2027, 1, 10), month('w', 2027, 2, 10)
+  ]
+  const awayClients = [
+    ...clients,
+    { id: 'y', firstName: 'Y', lastName: 'Baja', deactivationDate: '2026-11-15', inactivityPeriods: [{ fromDate: '2026-11-15', toDate: null }] },
+    { id: 'r', firstName: 'R', lastName: 'Pausa', inactivityPeriods: [{ fromDate: '2026-11-15', toDate: '2027-02-01' }] },
+    { id: 'w', firstName: 'W', lastName: 'Pausa larga', inactivityPeriods: [{ fromDate: '2026-11-15', toDate: '2027-04-01' }] }
+  ]
+  const awayView = buildBenefits({ padron, promotions: awayPromotions, ledger: awayLedger, clients: awayClients, billing }, OCT)
+  const awayRow = id => awayView.rows.find(a => a.id === id)
+
+  test('el acuerdo sigue siendo próximo, pero marcado: el cliente no va a estar activo en su rango', () => {
+    expect(awayRow('pY')).toMatchObject({ state: 'upcoming', clientAway: true })
+    expect(awayRow(`y:${ord(2027, 0)}`)).toMatchObject({ state: 'upcoming', clientAway: true })
+    expect(awayRow(`w:${ord(2027, 0)}`)).toMatchObject({ state: 'upcoming', clientAway: true })
+    // Vuelve en febrero, dentro del acuerdo: cuenta
+    expect(awayRow(`r:${ord(2027, 0)}`)).toMatchObject({ state: 'upcoming', clientAway: false })
+    // Sin períodos, nada cambia
+    expect(awayRow('pA2')).toMatchObject({ clientAway: false })
+  })
+
+  test('no entra en el conteo del chip ni en la tabla de próximos; se cuenta aparte', () => {
+    expect(awayView.kpis.counts).toEqual({ current: 7, expiring: 3, upcoming: 5 })
+    expect(awayView.kpis.upcomingAway).toBe(3)
+    const upcoming = benefitTables(awayView.rows, 'upcoming')
+    expect(upcoming.promos.map(a => a.id)).toEqual(['pA2', 'pU'])
+    expect(upcoming.discounts.map(a => a.clientId)).toEqual(['d', 'd', 'r'])
+  })
+
+  test('lo vigente no cambia: se sigue midiendo con el padrón', () => {
+    expect(awayView.kpis).toMatchObject({ base: 9, withBenefit: 7, offPadron: 1 })
+    expect(benefitTables(awayView.rows, 'current').promos.map(a => a.id)).toEqual(['pC', 'pH', 'pB', 'pA1'])
   })
 })
 

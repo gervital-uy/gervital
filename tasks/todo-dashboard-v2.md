@@ -15,19 +15,66 @@ DEFINER sin guarda y ejecutables por `anon`) y el estado de facturación de las 
 - Meses de promo: cada mes se factura por su servicio (CLAUDE.md); qué hacer con A-3475 lo define con el contador.
 
 ## Decisión del usuario (2026-10-30): la v2 no cambia la base
-Si una pieza necesita cambiar el esquema, se deshabilita. Las RPC nuevas que eran solo por
-rendimiento también se descartan: se calcula en el cliente con lo que ya existe.
-- **Fuera:** punto "accionable" en Bajas por motivo (B9), columna Motivo en Otros descuentos
-  (B10), costo por chofer / pago por tramo (B12: se reparte el costo mensual plano por tramo),
-  devolución por baja (no factible), reactivar promos en lote (B11).
-- **Sin RPC nuevas (B3, B4, B5, B15):** lecturas existentes + cálculo en el navegador (Finanzas pide
-  el panel una vez por mes).
-- **Con datos que ya existen:** pausa vs baja con `churn_followups.stage` (B13); prestadores con
-  `created_at` como inicio y aproximación en meses pasados, aclarada en la "i" (B6); `director_bps`
-  calculado sin persistir (B14); aforo y meta neta como filas de `app_settings` (tabla existente,
-  admin+ escribe) o controles que solo simulan (B8).
-- B1 no toca la base (edge function `biller` + `invoiceAmounts.js`). B2/093 son permisos, no
-  esquema, e independientes de la v2.
+Nada de migraciones, tampoco para crear o cambiar una RPC. Si una pieza necesita cambiar el
+esquema, se deshabilita. Las RPC nuevas que eran solo por rendimiento también se descartan: se
+calcula en el cliente con lo que ya existe.
+
+### Qué queda fuera y por qué (revisado 2026-11-06 contra la base viva)
+"Solo quedan fuera las piezas que requerirían cambiar el esquema" exagera: algunas quedan fuera por
+decisión aunque no necesiten esquema.
+
+**Necesitan esquema, así que quedan fuera:**
+- Columna Motivo en Otros descuentos (B10). `monthly_invoices` no guarda motivo y no hay entidad
+  "acuerdo de descuento". Haría falta un catálogo + columna (o una tabla de acuerdos) y `p_reason` en
+  `apply_plan_discount`.
+- Costo por chofer y pago por tramo (B12). Nada une un auto de transporte con el prestador que lo
+  maneja, ni hay tarifa por tramo: `transport_shift_cars.driver_provider_id` (+ `pay_mode` /
+  `per_trip_rate`). Mientras tanto, el costo mensual plano de los choferes se reparte en partes
+  iguales por tramo.
+- Devolución por baja. Haría falta una entidad de devoluciones y una nota de crédito parcial en
+  Biller. Además contradice el prorrateo de `calculate_month_billing`.
+- Renovación diferida al cierre de mes. Haría falta una tabla `promo_renewal_decisions` y un
+  programador. `pg_cron` está disponible en el proyecto pero no habilitado: activarlo es prender una
+  extensión; la pieza de esquema es la tabla.
+- Feriados. Haría falta una tabla de calendario.
+
+**Aproximadas porque el esquema no guarda el dato** (cada una se aclara en su "i"):
+- Prestadores en meses pasados (B6). `service_providers` no tiene vigencia (solo `active`,
+  `created_at`, `updated_at`): el inicio es `created_at`.
+- Egreso de empleadas. `employees` solo tiene `active`, y `salaryCostForMonth` (legacy) saltea a una
+  inactiva en todos los meses: el día que se dé de baja a una, su costo desaparece también de los
+  meses en que trabajó (bajan hacia atrás Personal, los márgenes, el puente y el punto de equilibrio).
+  Finanzas toma el mes del `updated_at` de una empleada inactiva como su mes de egreso y lo aclara en
+  la "i" de Personal. Es aproximado: `updateEmployee` pisa `updated_at` en cada edición, así que
+  editarla después de la baja lo corre. Lo mismo vale para el fin de un prestador dado de baja
+  (`providerCostForMonth` también lo saltea en todos los meses). Hoy las 6 empleadas y los 4
+  prestadores están activos.
+- Pausa contra baja (B13). `client_inactivity_periods` no las distingue: se usa
+  `churn_followups.stage`.
+- Tier por mes. `cognitive_level` no tiene historial: se usa el tier actual.
+- Clientes heredados. No hay marca: convención `start_date` = lanzamiento (`platform_start`).
+
+**Fuera por decisión, aunque no necesitan esquema:**
+- Punto "accionable" en Bajas por motivo (B9). Con un mapeo fijo en código no hace falta esquema;
+  solo lo necesitaría si se edita desde la app (`deactivation_reasons.is_actionable`).
+- Reactivar promos (B11). Se puede con un `createPrepaidPromo` por promo, pero queda a medias si
+  falla una; hacerlo atómico es una RPC nueva (`renew_prepaid_promos`).
+- Turno de la falta. La columna existe (`attendance_records.shift`, con CHECK
+  morning/afternoon/full_day) pero ninguna de las 353 filas de asistencia la tiene cargada (al
+  2026-11-06), porque `register_absence` y `register_absence_range` no la reciben. Faltaría un
+  `p_shift` en las dos (firma nueva: borrar la vieja) y la UI: cambio de RPC, no de esquema. Las
+  faltas ya cargadas no tienen turno.
+- Alertas operativas (2 faltas seguidas, caída del 25%). Funcionalidad nueva que se calcularía con
+  lo que existe.
+- RPC solo por rendimiento (B3, B4, B5, B15). Lecturas existentes + cálculo en el navegador
+  (Finanzas pide el panel una vez por mes).
+
+**Con datos que ya existen, sin esquema:** `director_bps` calculado sin persistir (B14); aforo
+(`shift_capacity`) y meta neta (`net_margin_target`) como filas de `app_settings` (tabla existente,
+admin+ escribe) o controles que solo simulan (B8).
+
+B1 no toca la base (edge function `biller` + `invoiceAmounts.js`). B2/093 son permisos, no esquema,
+e independientes de la v2.
 
 ## Checklist por fase (detalle en §7)
 - [ ] B2 — migración de seguridad 093: escrita en `fix/security-hardening`, POSTERGADA (el usuario no quiere migraciones ahora, 2026-10-30). Sin migración: apagar el signup + rotar las 6 contraseñas
@@ -317,7 +364,7 @@ src/services/dashboardV2/   (cada uno con su *.test.js)
 - La tasa de `get_attendance_stats` está mal.
 - `REASON_LABELS` no tiene la clave `problema_de_salud_transitorio`.
 
-**Fuera de alcance:** calendario de feriados, turno en `register_absence`, historial de `cognitive_level`, fecha de egreso de empleados, entidad de devoluciones y nota de crédito parcial en Biller, `promo_renewal_decisions` con scheduler (no hay `pg_cron`).
+**Fuera de alcance** (el motivo de cada uno, en "Qué queda fuera y por qué", al principio): calendario de feriados, historial de `cognitive_level`, fecha de egreso de empleados (Finanzas la aproxima con `updated_at`), entidad de devoluciones y nota de crédito parcial en Biller, `promo_renewal_decisions` con un programador (`pg_cron` está disponible pero no habilitado). El turno de la falta no es esquema: `attendance_records.shift` existe y falta que `register_absence` lo reciba (cambio de RPC).
 
 ---
 
@@ -333,7 +380,7 @@ src/services/dashboardV2/   (cada uno con su *.test.js)
 | Facturar la promo en cuotas iguales (total/N) | Choca con CLAUDE.md: cada e-factura es el servicio de su mes | total/N / servicio del mes | Servicio del mes (B1) |
 | Renovar promos en el cierre de mes | No hay scheduler ni evento de cierre | diferido (XL) / crear al confirmar / omitir | Botón que crea al confirmar (superadmin), con aviso si pisa un descuento suelto |
 | Motivo de descuento; descuento como acuerdo con nombre | Catálogo + columna o tabla (B10) | omitir en v1 / migración | Omitir la columna en v1. Las corridas se agrupan por heurística |
-| Motivos de baja accionables | Columna `is_actionable` (B9) o un mapeo fijo | — | Migración chica (B9) |
+| Motivos de baja accionables | Columna `is_actionable` (B9) o un mapeo fijo | — | Fuera por la decisión del 30-10. Con un mapeo fijo no haría falta esquema |
 | Clientes heredados (cargados al lanzar) | No hay marca. Proxy: `start_date = 2026-06-01` (43 clientes) | `platform_start` + convención / columna `is_migrated` | `app_settings.platform_start = '2026-06'` + la convención |
 | Reingreso cuenta como alta; pausa vs baja | Es la única definición en la que activos(mes anterior) + altas − bajas = activos(mes) cierra. Los datos tienen errores | — | Ver decisión 3 |
 | Pago a choferes por tramo ($650) y descuento por faltas al chofer fijo | No hay tarifa por viaje ni registro de faltas del chofer | omitir / B12 | Costo mensual plano repartido en partes iguales por tramo |
@@ -341,9 +388,9 @@ src/services/dashboardV2/   (cada uno con su *.test.js)
 | "Sin cobro no hay factura"; email y dirección válidos para emitir | Reglas de UI. Hoy el servidor solo exige documento | bloqueo / aviso | Cobro previo: bloqueo en UI (en los datos nunca pasó lo contrario). Email y dirección: solo aviso |
 | Ventana de fecha de pago + etiquetas anticipado/atrasado | Validación en el front | — | Adoptar: es un cálculo puro |
 | Motivación como métrica de cartera | El dato existe pero es escaso (sin reportes desde el 18-09) | 4.º balde "sin dato" / excluir y mostrar cobertura | 4.º balde gris + cobertura |
-| Unidad "turno" (día completo = 2) y licencia fuera del denominador | No se registra el turno de la falta | turno / día-cliente | Día-cliente (como se guarda y como factura `calculate_month_billing`). Licencia fuera del denominador, como en legacy |
+| Unidad "turno" (día completo = 2) y licencia fuera del denominador | La columna `attendance_records.shift` existe, pero `register_absence` no la llena: ninguna falta tiene turno | turno / día-cliente | Día-cliente (como se guarda y como factura `calculate_month_billing`). Licencia fuera del denominador, como en legacy |
 | Umbrales: cobertura 30%, cobranza 90/70%, conversión 60% | Constantes de UI | — | Dejarlos como constantes, documentados en la "i" |
-| Alertas operativas (2 faltas seguidas, caída del 25%) y calendario de feriados | Funcionalidades nuevas | — | Omitir y mencionarlo en la explicación |
+| Alertas operativas (2 faltas seguidas, caída del 25%) y calendario de feriados | Funcionalidades nuevas. Las alertas se calcularían con lo que existe; los feriados necesitan una tabla | — | Omitir y mencionarlo en la explicación |
 
 ---
 
@@ -411,7 +458,7 @@ Si se prefiere arrancar por el análisis, Asistencia (sin backend y sin escritur
 5. **Prestadores de servicios.**
    - **Recomendado:** agregar vigencia (mes desde/hasta) a `service_providers` y borrar los extras sueltos de jul/ago que se cuentan dos veces (114.500 por mes). Mientras tanto, aplicar prestadores solo desde sep-2026.
    - Choferes: costo mensual plano repartido por tramo, hasta confirmar si el pago por tramo es real. Gonzalo no está cargado como prestador: confirmar si se le paga.
-6. **Qué entra en v1 de lo que inventa la maqueta.** Recomendado:
+6. **Qué entra en v1 de lo que inventa la maqueta.** Recomendado (la decisión del 30-10 deja fuera Reactivar promos y "accionable"):
    - **Sí:** aforo (`shift_capacity`, editable en Gerencia) y meta neto (`net_margin_target`, empieza sin definir), guardados en `app_settings`.
    - **Sí:** Reactivar promos como botón que crea al confirmar (superadmin, con aviso si pisa un descuento).
    - **Sí, en la Fase 10:** "accionable" con la migración chica B9.

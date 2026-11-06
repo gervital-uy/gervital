@@ -1,5 +1,7 @@
 import { promoMonthIndex, promoOrdinal, promoPackageAmount } from '../promotions/promotionsView'
+import { isInactiveThroughout } from '../clients/inactivityPeriods'
 import { PLATFORM_START_ISO } from './platform'
+import { inactivityPeriodsOf, monthBounds } from './padron'
 
 // Promociones y otros descuentos del mes (bloque de Gestión CFP). Lógica pura; las
 // lecturas están en benefitsQueries.js. month es 0-indexed y un mes se identifica por
@@ -197,9 +199,20 @@ function previousCoverage(pastBase, ledger, ord) {
   return { year: pastBase.year, month: pastBase.month, base: ids.length, withBenefit, pct: pct(withBenefit, ids.length) }
 }
 
+// Un acuerdo que todavía no arrancó y cuyo cliente no va a estar activo ningún día de
+// su rango (una baja sin reingreso antes de que termine). Dar de baja no borra los
+// descuentos ni las promos de los meses futuros (deactivate_client no toca
+// monthly_invoices ni promotions), pero esos meses nunca se van a cobrar.
+const awayFor = (agreement, client) => isInactiveThroughout(
+  monthBounds(agreement.startYear, agreement.startMonth).first,
+  monthBounds(agreement.endYear, agreement.endMonth).last,
+  inactivityPeriodsOf(client)
+)
+
 // El bloque del mes. sources = { padron, promotions, ledger, clients, billing, pastBase }:
 //   · padron: las filas de buildPadron del mes (la base).
-//   · promotions: getPromotions(); ledger: getBenefitLedger(); clients: nombres y fotos.
+//   · promotions: getPromotions(); ledger: getBenefitLedger(); clients: nombre, foto y
+//     períodos de inactividad de cada cliente (getBenefitClients).
 //   · billing: { [clientId]: calculateMonthBilling } de los clientes con beneficio.
 //   · pastBase: { year, month, clientIds } del mes −6, o null.
 // Devuelve los acuerdos sin el mes (agreements, para el historial), los acuerdos con
@@ -216,6 +229,7 @@ export function buildBenefits({ padron, promotions, ledger, clients, billing = {
     monthDiscountOf({ attendanceGross: r.attendanceGross, percent: benefitPercent(r) }, billing[r.id])
   ]))
 
+  const clientById = new Map((clients || []).map(c => [c.id, c]))
   const agreements = buildAgreements({ promotions, ledger, clients })
   const rows = agreements.map(a => {
     const state = agreementState(a, ord)
@@ -229,6 +243,8 @@ export function buildBenefits({ padron, promotions, ledger, clients, billing = {
       ...a,
       state,
       inPadron,
+      // Lo vigente se mide con el padrón; lo que no arrancó, con los períodos.
+      clientAway: state === 'upcoming' && awayFor(a, clientById.get(a.clientId)),
       index: promoMonthIndex(a, year, month),
       // El servicio del mes (asistencia con el descuento + transporte).
       monthAmount: inPadron ? row.amount : null,
@@ -306,11 +322,14 @@ export function buildBenefits({ padron, promotions, ledger, clients, billing = {
       counts: {
         current: live.length,
         expiring: renewals.length,
-        upcoming: rows.filter(a => a.state === 'upcoming').length
+        upcoming: rows.filter(a => a.state === 'upcoming' && !a.clientAway).length
       },
       // Acuerdos vigentes de clientes que no cobran este mes (p. ej. una baja): no
       // entran en la cobertura ni en las tablas del mes.
-      offPadron: rows.filter(a => (a.state === 'active' || a.state === 'expiring') && !a.inPadron).length
+      offPadron: rows.filter(a => (a.state === 'active' || a.state === 'expiring') && !a.inPadron).length,
+      // Acuerdos que no arrancaron de clientes que no van a estar activos en su rango:
+      // tampoco entran en Próximos.
+      upcomingAway: rows.filter(a => a.clientAway).length
     }
   }
 }
@@ -324,10 +343,11 @@ export function sortBenefitRows(rows) {
 }
 
 // Las filas de un chip del mes (no del historial), separadas por tabla. Lo vigente
-// es solo lo del padrón; lo que todavía no arrancó, todo.
+// es solo lo del padrón; lo que todavía no arrancó, salvo el de un cliente que no va
+// a estar activo en su rango (clientAway).
 export function benefitTables(rows, filterKey) {
   const states = BENEFIT_FILTERS.find(f => f.key === filterKey && f.key !== 'history')?.states || []
-  const shown = (rows || []).filter(a => states.includes(a.state) && (a.state === 'upcoming' || a.inPadron))
+  const shown = (rows || []).filter(a => states.includes(a.state) && (a.state === 'upcoming' ? !a.clientAway : a.inPadron))
   return {
     promos: sortBenefitRows(shown.filter(a => a.kind === 'promo')),
     discounts: sortBenefitRows(shown.filter(a => a.kind === 'discount'))

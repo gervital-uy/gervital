@@ -22,12 +22,14 @@ const LEDGER = [
   { client_id: 'b', year: 2026, month: 10, discount_percent: '20.00', promo_id: null, payment_status: 'pending', attendance_chargeable_gross: null },
   { client_id: 'c', year: 2026, month: 9, discount_percent: '100.00', promo_id: null, payment_status: 'pending', attendance_chargeable_gross: null }
 ]
-const CLIENTS = [{ id: 'a', first_name: 'Ana', last_name: 'Pérez', avatar_url: null }]
+const CLIENTS = [{ id: 'a', firstName: 'Ana', lastName: 'Pérez', avatarUrl: null, deactivationDate: '2026-11-15', inactivityPeriods: [{ fromDate: '2026-11-15', toDate: null }] }]
 
 let ledgerQuery
+let clientsQuery
 const mockTables = ({ ledger = { data: LEDGER, error: null } } = {}) => {
   ledgerQuery = builder(ledger)
-  supabase.from.mockImplementation(table => (table === 'monthly_invoices' ? ledgerQuery : builder({ data: CLIENTS, error: null })))
+  clientsQuery = builder({ data: CLIENTS, error: null })
+  supabase.from.mockImplementation(table => (table === 'monthly_invoices' ? ledgerQuery : table === 'clients_full' ? clientsQuery : null))
 }
 
 beforeEach(() => {
@@ -61,7 +63,9 @@ describe('loadBenefitSources', () => {
     expect(calculateMonthBilling).toHaveBeenCalledWith('a', 2026, 9)
     expect(sources.billing).toEqual({ a: { id: 'a' }, b: { id: 'b' } })
     expect(sources.promotions).toEqual([{ id: 'p1' }])
-    expect(sources.clients).toEqual([{ id: 'a', firstName: 'Ana', lastName: 'Pérez', avatarUrl: null }])
+    // Los clientes traen sus períodos de inactividad: una baja no tiene próximos
+    expect(clientsQuery.select).toHaveBeenCalledWith('id, firstName, lastName, avatarUrl, deactivationDate, inactivityPeriods')
+    expect(sources.clients).toEqual([{ id: 'a', firstName: 'Ana', lastName: 'Pérez', avatarUrl: null, deactivationDate: '2026-11-15', inactivityPeriods: [{ fromDate: '2026-11-15', toDate: null }] }])
     expect(sources.ledger).toHaveLength(4)
   })
 

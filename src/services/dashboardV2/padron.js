@@ -23,18 +23,22 @@ export function monthBounds(year, month) {
   return { first: `${year}-${pad(month + 1)}-01`, last: `${year}-${pad(month + 1)}-${pad(lastDay)}` }
 }
 
+// Los períodos de inactividad [desde, hasta) de una ficha de clients_full. Son la
+// fuente de verdad (un reingreso borra deactivation_date); deactivationDate solo se
+// usa si la ficha no trae los períodos.
+export const inactivityPeriodsOf = client => (Array.isArray(client?.inactivityPeriods)
+  ? client.inactivityPeriods
+  : client?.deactivationDate ? [{ fromDate: client.deactivationDate, toDate: null }] : [])
+
 // Lo que pasa con el cliente dentro del mes, como día del mes (o null):
 //   · startDay: alta. Los heredados (cargados con la fecha de lanzamiento) no son alta.
-//   · leaveDay / returnDay: empieza o termina un período de inactividad [desde, hasta).
-//     Los períodos son la fuente de verdad (un reingreso borra deactivation_date);
-//     deactivationDate solo se usa si la ficha no trae los períodos.
+//   · leaveDay / returnDay: empieza o termina un período de inactividad
+//     (inactivityPeriodsOf).
 //   · inactive: algún período toca el mes, así que la cuota puede ser parcial.
 export function monthEvents(client, year, month) {
   const { first, last } = monthBounds(year, month)
   const inMonth = iso => !!iso && isoDay(iso) >= first && isoDay(iso) <= last
-  const periods = Array.isArray(client?.inactivityPeriods)
-    ? client.inactivityPeriods
-    : client?.deactivationDate ? [{ fromDate: client.deactivationDate, toDate: null }] : []
+  const periods = inactivityPeriodsOf(client)
   const leave = periods.find(p => inMonth(p.fromDate))
   const back = periods.find(p => inMonth(p.toDate))
   const start = isoDay(client?.startDate)

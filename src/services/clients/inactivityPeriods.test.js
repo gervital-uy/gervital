@@ -1,4 +1,4 @@
-import { isInactiveOn } from './inactivityPeriods'
+import { isInactiveOn, isInactiveThroughout } from './inactivityPeriods'
 
 describe('isInactiveOn', () => {
   const periods = [{ fromDate: '2026-03-10', toDate: '2026-06-15' }]
@@ -29,5 +29,31 @@ describe('isInactiveOn', () => {
   test('sin períodos / null: activo', () => {
     expect(isInactiveOn('2026-05-01', [])).toBe(false)
     expect(isInactiveOn('2026-05-01', null)).toBe(false)
+  })
+})
+
+describe('isInactiveThroughout', () => {
+  test('un período abierto que arranca antes del rango lo cubre entero', () => {
+    expect(isInactiveThroughout('2027-01-01', '2027-03-31', [{ fromDate: '2026-11-15', toDate: null }])).toBe(true)
+  })
+  test('un período abierto que arranca dentro del rango no lo cubre', () => {
+    expect(isInactiveThroughout('2027-01-01', '2027-03-31', [{ fromDate: '2027-02-10', toDate: null }])).toBe(false)
+  })
+  test('reintegro dentro del rango (to exclusive): hay días activos', () => {
+    expect(isInactiveThroughout('2027-01-01', '2027-03-31', [{ fromDate: '2026-11-15', toDate: '2027-02-01' }])).toBe(false)
+    expect(isInactiveThroughout('2027-01-01', '2027-03-31', [{ fromDate: '2026-11-15', toDate: '2027-03-31' }])).toBe(false)
+  })
+  test('reintegro el día después del rango: inactivo todo el rango', () => {
+    expect(isInactiveThroughout('2027-01-01', '2027-03-31', [{ fromDate: '2026-11-15', toDate: '2027-04-01' }])).toBe(true)
+  })
+  test('períodos encadenados cubren el rango; con un hueco, no', () => {
+    const chained = [{ fromDate: '2027-01-15', toDate: '2027-05-01' }, { fromDate: '2026-12-01', toDate: '2027-01-15' }]
+    expect(isInactiveThroughout('2027-01-01', '2027-03-31', chained)).toBe(true)
+    const gap = [{ fromDate: '2026-12-01', toDate: '2027-01-15' }, { fromDate: '2027-01-16', toDate: null }]
+    expect(isInactiveThroughout('2027-01-01', '2027-03-31', gap)).toBe(false)
+  })
+  test('sin períodos / null: activo', () => {
+    expect(isInactiveThroughout('2027-01-01', '2027-03-31', [])).toBe(false)
+    expect(isInactiveThroughout('2027-01-01', '2027-03-31', null)).toBe(false)
   })
 })

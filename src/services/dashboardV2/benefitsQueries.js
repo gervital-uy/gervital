@@ -33,10 +33,19 @@ export async function getBenefitLedger() {
     }))
 }
 
-// Nombre y foto de todos los clientes, también los dados de baja: el historial los nombra.
-export async function getClientNames() {
-  const rows = await supabase.from('clients').select('id, first_name, last_name, avatar_url').then(unwrap)
-  return rows.map(c => ({ id: c.id, firstName: c.first_name || '', lastName: c.last_name || '', avatarUrl: c.avatar_url || null }))
+// Nombre, foto y períodos de inactividad de todos los clientes, también los dados de
+// baja: el historial los nombra, y un acuerdo futuro de un cliente que no va a volver
+// no es un próximo.
+export async function getBenefitClients() {
+  const rows = await supabase.from('clients_full').select('id, firstName, lastName, avatarUrl, deactivationDate, inactivityPeriods').then(unwrap)
+  return rows.map(c => ({
+    id: c.id,
+    firstName: c.firstName || '',
+    lastName: c.lastName || '',
+    avatarUrl: c.avatarUrl || null,
+    deactivationDate: c.deactivationDate || null,
+    inactivityPeriods: c.inactivityPeriods
+  }))
 }
 
 // La población que cobra un mes (la misma del padrón), para la cobertura de hace seis meses.
@@ -60,7 +69,7 @@ export async function loadBenefitSources({ year, month }) {
   const [promotions, ledger, clients, pastIds] = await Promise.all([
     getPromotions(),
     getBenefitLedger(),
-    getClientNames(),
+    getBenefitClients(),
     // La comparación con hace seis meses es un agregado: si falla, el resto se muestra igual.
     past ? getPanelClientIds(past.year, past.month).catch(() => null) : null
   ])
