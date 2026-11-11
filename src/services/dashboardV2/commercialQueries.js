@@ -16,8 +16,8 @@ import { unwrap } from './queries'
 const CLIENT_FIELDS = 'id, firstName, lastName, avatarUrl, birthDate, cognitiveLevel, startDate, clientType, deactivationDate, trialStartedAt, trialConvertedAt, address'
 
 // PostgREST corta cada respuesta en 1.000 filas. client_plans suma una versión por
-// cliente casi todos los meses, así que se lee por páginas (con un orden fijo para
-// que las páginas no se pisen).
+// cada cambio de plan de cada cliente, así que se lee por páginas (con un orden fijo
+// para que las páginas no se pisen).
 export const PAGE_SIZE = 1000
 
 async function readAll(query) {
