@@ -7,6 +7,7 @@ import Button from '../../components/ui/Button'
 import { formatCurrency } from '../../utils/format'
 import { ordinalOf, eligibleMonths, isEligible, validateDiscountRange } from '../../services/invoices/discountRange'
 import { applyPlanDiscount, calculateMonthBilling, markMonthPaid } from '../../services/api'
+import BenefitReasonField, { reasonOrNull } from './BenefitReasonField'
 
 const PRESETS = [10, 15, 20, 25]
 
@@ -42,6 +43,7 @@ export default function ApplyDiscountModal({ isOpen, onClose, client, invoices, 
   const [anchor, setAnchor] = useState(null)
   const [head, setHead] = useState(null)
   const [percent, setPercent] = useState(15)
+  const [reason, setReason] = useState('')
   const [amounts, setAmounts] = useState({}) // ordinal → base attendance gross
   const [markPaid, setMarkPaid] = useState(false)
   const [paidDate, setPaidDate] = useState('')
@@ -55,6 +57,7 @@ export default function ApplyDiscountModal({ isOpen, onClose, client, invoices, 
     setAnchor(null)
     setHead(null)
     setPercent(15)
+    setReason('')
     setMarkPaid(false)
     setPaidDate(format(new Date(), 'yyyy-MM-dd'))
     setError(null)
@@ -118,7 +121,7 @@ export default function ApplyDiscountModal({ isOpen, onClose, client, invoices, 
     setSubmitting(true)
     setError(null)
     try {
-      await applyPlanDiscount(client.id, s.year, s.month, e.year, e.month, pct)
+      await applyPlanDiscount(client.id, s.year, s.month, e.year, e.month, pct, reasonOrNull(reason))
       if (markPaid) {
         // Discount is applied first, so the paid amount (null → live billing) already
         // reflects it. Same paidDate for every selected month.
@@ -227,6 +230,9 @@ export default function ApplyDiscountModal({ isOpen, onClose, client, invoices, 
               </div>
             </div>
           </div>
+
+          {/* Step 3 — motivo */}
+          <BenefitReasonField value={reason} onChange={setReason} />
 
           {validation.error && (
             <div className="p-2.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg">

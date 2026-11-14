@@ -18,7 +18,7 @@ const builder = result => {
 const LEDGER = [
   { client_id: 'a', year: 2026, month: 4, discount_percent: '10.00', promo_id: null, payment_status: 'paid', attendance_chargeable_gross: '27000.00' },
   { client_id: 'a', year: 2026, month: 9, discount_percent: '10.00', promo_id: 'p1', payment_status: 'paid', attendance_chargeable_gross: '27000.00' },
-  { client_id: 'b', year: 2026, month: 9, discount_percent: '25.00', promo_id: null, payment_status: 'pending', attendance_chargeable_gross: null },
+  { client_id: 'b', year: 2026, month: 9, discount_percent: '25.00', discount_reason: 'Situación económica', promo_id: null, payment_status: 'pending', attendance_chargeable_gross: null },
   { client_id: 'b', year: 2026, month: 10, discount_percent: '20.00', promo_id: null, payment_status: 'pending', attendance_chargeable_gross: null },
   { client_id: 'c', year: 2026, month: 9, discount_percent: '100.00', promo_id: null, payment_status: 'pending', attendance_chargeable_gross: null }
 ]
@@ -42,12 +42,13 @@ beforeEach(() => {
 describe('getBenefitLedger', () => {
   test('trae los meses con promo o descuento desde el lanzamiento, en camelCase', async () => {
     const ledger = await getBenefitLedger()
+    expect(ledgerQuery.select).toHaveBeenCalledWith('client_id, year, month, discount_percent, discount_reason, promo_id, payment_status, attendance_chargeable_gross')
     expect(ledgerQuery.or).toHaveBeenCalledWith('discount_percent.gt.0,promo_id.not.is.null')
     expect(ledgerQuery.gte).toHaveBeenCalledWith('year', 2026)
     // mayo 2026 es anterior al lanzamiento
     expect(ledger).toHaveLength(4)
-    expect(ledger[0]).toEqual({ clientId: 'a', year: 2026, month: 9, discountPercent: 10, promoId: 'p1', paymentStatus: 'paid', attendanceChargeableGross: 27000 })
-    expect(ledger[1]).toMatchObject({ clientId: 'b', promoId: null, attendanceChargeableGross: null })
+    expect(ledger[0]).toEqual({ clientId: 'a', year: 2026, month: 9, discountPercent: 10, discountReason: null, promoId: 'p1', paymentStatus: 'paid', attendanceChargeableGross: 27000 })
+    expect(ledger[1]).toMatchObject({ clientId: 'b', discountReason: 'Situación económica', promoId: null, attendanceChargeableGross: null })
   })
 
   test('un error de la base se propaga', async () => {

@@ -42,12 +42,12 @@ const PADRON = [
 ]
 const SOURCES = {
   promotions: [
-    promo('pA', 'a', [2026, 9], [2026, 11], { paidDate: '2026-10-05', paidAmount: 81000 }),
+    promo('pA', 'a', [2026, 9], [2026, 11], { paidDate: '2026-10-05', paidAmount: 81000, reason: 'Convenio con la mutualista' }),
     promo('pB', 'b', [2026, 8], [2026, 10], { paidDate: '2026-09-05', paidAmount: 81000 }),
     promo('pOld', 'k', [2026, 5], [2026, 7], { paidDate: '2026-06-05', paidAmount: 81000 })
   ],
   ledger: [
-    month('c', 9, 25), month('c', 10, 20),
+    month('c', 9, 25, { discountReason: 'Situación económica' }), month('c', 10, 20),
     month('d', 8, 10, paid(27000)), month('d', 9, 10),
     month('g', 9, 100),
     month('e', 6, 15, paid(17000)), month('e', 7, 15, paid(17000))
@@ -98,6 +98,21 @@ describe('Promociones y otros descuentos', () => {
     expect(within(discounts).getAllByText('estimado')).toHaveLength(1)
   })
 
+  test('la columna Motivo muestra el motivo o una raya', async () => {
+    renderBlock()
+    await screen.findByText('5 de 6')
+    const promos = tableOf('Promos prepagas')
+    const discounts = tableOf('Otros descuentos')
+    expect(within(promos).getByRole('columnheader', { name: 'Motivo' })).toBeInTheDocument()
+    expect(within(discounts).getByRole('columnheader', { name: 'Motivo' })).toBeInTheDocument()
+    expect(within(promos).getByText('Convenio con la mutualista')).toBeInTheDocument()
+    expect(within(discounts).getByText('Situación económica')).toBeInTheDocument()
+    // b no cargó motivo: su celda (la segunda de la fila) es una raya
+    // eslint-disable-next-line testing-library/no-node-access
+    const rowB = within(promos).getByRole('link', { name: 'B Test' }).closest('tr')
+    expect(within(rowB).getAllByRole('cell')[1]).toHaveTextContent('—')
+  })
+
   test('los chips filtran: próximos y por renovar', async () => {
     renderBlock()
     await screen.findByText('5 de 6')
@@ -132,7 +147,7 @@ describe('Promociones y otros descuentos', () => {
     const { container } = renderBlock()
     await screen.findByText('5 de 6')
     expect(container.textContent).not.toMatch(/pr[oó]ximamente/i)
-    expect(container.textContent).not.toMatch(/Reactivar|Motivo/)
+    expect(container.textContent).not.toMatch(/Reactivar/)
   })
 
   test('mientras cargan las fuentes y si fallan', async () => {

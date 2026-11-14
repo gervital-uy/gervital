@@ -14,7 +14,7 @@ import { inactivityPeriodsOf, monthBounds } from './padron'
 //     2..N quedan prepagos en $0 (CLAUDE.md, migraciones 086-092).
 //   · descuento suelto: discount_percent de un mes sin promo (apply_plan_discount).
 //     No existe una entidad "acuerdo": se agrupa en corridas de meses consecutivos
-//     del mismo cliente con el mismo %.
+//     del mismo cliente con el mismo % y el mismo motivo (discount_reason).
 // Cada promo o corrida es un acuerdo (una fila de las tablas). Lo del mes (cobertura,
 // descuento, paquetes, renovaciones) se mide sobre el padrón del mes (padron.js): la
 // misma población que cobra Gestión CFP.
@@ -61,23 +61,25 @@ export function paidMonthDiscount({ paymentStatus, attendanceChargeableGross, di
   return Math.round((num(attendanceChargeableGross) * p) / (100 - p))
 }
 
-// Corridas de descuento suelto: meses consecutivos del mismo cliente con el mismo %,
-// sin promo. El total de una corrida suma lo descontado en sus meses cobrados.
+// Corridas de descuento suelto: meses consecutivos del mismo cliente con el mismo % y
+// el mismo motivo, sin promo. Dos descuentos pegados con el mismo % pero distinto
+// motivo son dos acuerdos. El total de una corrida suma lo descontado en sus meses
+// cobrados.
 export function discountRuns(ledger) {
   const months = (ledger || [])
     .filter(r => !r.promoId && num(r.discountPercent) > 0)
-    .map(r => ({ ...r, ord: promoOrdinal(r.year, r.month), percent: num(r.discountPercent) }))
+    .map(r => ({ ...r, ord: promoOrdinal(r.year, r.month), percent: num(r.discountPercent), reason: r.discountReason || null }))
     .filter(r => r.ord >= PLATFORM_START_ORD)
     .sort((a, b) => (a.clientId < b.clientId ? -1 : a.clientId > b.clientId ? 1 : a.ord - b.ord))
 
   const runs = []
   for (const m of months) {
     const last = runs[runs.length - 1]
-    if (last && last.clientId === m.clientId && last.endOrd === m.ord - 1 && last.percent === m.percent) {
+    if (last && last.clientId === m.clientId && last.endOrd === m.ord - 1 && last.percent === m.percent && last.reason === m.reason) {
       last.endOrd = m.ord
       last.ledger.push(m)
     } else {
-      runs.push({ clientId: m.clientId, percent: m.percent, startOrd: m.ord, endOrd: m.ord, ledger: [m] })
+      runs.push({ clientId: m.clientId, percent: m.percent, reason: m.reason, startOrd: m.ord, endOrd: m.ord, ledger: [m] })
     }
   }
 
@@ -115,6 +117,7 @@ export function buildAgreements({ promotions, ledger, clients }) {
     kind: 'promo',
     clientId: p.clientId,
     percent: num(p.discountPercent),
+    reason: p.reason || null,
     startOrd: promoOrdinal(p.startYear, p.startMonth),
     endOrd: promoOrdinal(p.endYear, p.endMonth),
     totalAmount: num(p.totalAmount),

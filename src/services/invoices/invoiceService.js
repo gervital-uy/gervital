@@ -225,15 +225,17 @@ export async function unmarkMonthPaid(clientId, year, month) {
  * @param {number} endYear
  * @param {number} endMonth - 0-indexed
  * @param {number} percent - 0..100
+ * @param {string|null} reason - motivo opcional; vacío o 0% lo dejan en null
  */
-export async function applyPlanDiscount(clientId, startYear, startMonth, endYear, endMonth, percent) {
+export async function applyPlanDiscount(clientId, startYear, startMonth, endYear, endMonth, percent, reason = null) {
   const { data, error } = await supabase.rpc('apply_plan_discount', {
     p_client_id: clientId,
     p_start_year: startYear,
     p_start_month: startMonth,
     p_end_year: endYear,
     p_end_month: endMonth,
-    p_percent: percent
+    p_percent: percent,
+    p_reason: reason
   })
   if (error) throw new Error(error.message)
   if (!data.success) throw new Error(data.error || 'Error al aplicar el descuento')

@@ -7,6 +7,7 @@ import Button from '../../components/ui/Button'
 import { formatCurrency } from '../../utils/format'
 import { ordinalOf, eligibleMonths, isEligible, validateDiscountRange } from '../../services/invoices/discountRange'
 import { calculateMonthBilling, createPrepaidPromo } from '../../services/api'
+import BenefitReasonField, { reasonOrNull } from './BenefitReasonField'
 
 const PRESETS = [10, 15, 20, 25]
 
@@ -42,6 +43,7 @@ export default function PrepaidPromoModal({ isOpen, onClose, client, invoices, o
   const [anchor, setAnchor] = useState(null)
   const [head, setHead] = useState(null)
   const [percent, setPercent] = useState(15)
+  const [reason, setReason] = useState('')
   const [totals, setTotals] = useState({}) // ordinal -> { attBase, trans }
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -49,7 +51,7 @@ export default function PrepaidPromoModal({ isOpen, onClose, client, invoices, o
 
   useEffect(() => {
     if (!isOpen) return
-    setAnchor(null); setHead(null); setPercent(15); setError(null)
+    setAnchor(null); setHead(null); setPercent(15); setReason(''); setError(null)
     if (eligible.length === 0) return
     setLoading(true)
     Promise.all(eligible.map(m =>
@@ -111,7 +113,7 @@ export default function PrepaidPromoModal({ isOpen, onClose, client, invoices, o
     const e = ymFromOrdinal(range.end)
     setSubmitting(true); setError(null)
     try {
-      await createPrepaidPromo(client.id, s.year, s.month, e.year, e.month, pct)
+      await createPrepaidPromo(client.id, s.year, s.month, e.year, e.month, pct, reasonOrNull(reason))
       await onRefresh()
       onClose()
     } catch (err) {
@@ -205,6 +207,9 @@ export default function PrepaidPromoModal({ isOpen, onClose, client, invoices, o
               </div>
             </div>
           </div>
+
+          {/* Step 3 — motivo */}
+          <BenefitReasonField value={reason} onChange={setReason} />
 
           {validation.error && (
             <div className="p-2.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg">

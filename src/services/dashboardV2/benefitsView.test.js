@@ -74,6 +74,20 @@ describe('corridas de descuento suelto', () => {
     expect(runs).toEqual([])
   })
 
+  test('un motivo distinto corta la corrida aunque el % sea el mismo; cada corrida lleva su motivo', () => {
+    const runs = discountRuns([
+      month('f', 2026, 6, 10, { discountReason: 'Convenio' }),
+      month('f', 2026, 7, 10, { discountReason: 'Convenio' }),
+      month('f', 2026, 8, 10, { discountReason: 'Reclamo' }),
+      month('f', 2026, 9, 10)
+    ])
+    expect(runs.map(r => [r.startOrd, r.endOrd, r.reason])).toEqual([
+      [ord(2026, 6), ord(2026, 7), 'Convenio'],
+      [ord(2026, 8), ord(2026, 8), 'Reclamo'],
+      [ord(2026, 9), ord(2026, 9), null]
+    ])
+  })
+
   test('el total de una corrida suma sus meses cobrados y cuenta los que no tienen dato', () => {
     const [run] = discountRuns([
       month('e', 2026, 6, 10, paid(27000)),
@@ -94,6 +108,16 @@ describe('acuerdos', () => {
   const clients = [{ id: 'a', firstName: 'Lucía', lastName: 'Pérez', avatarUrl: 'http://img/a' }, { id: 'd', firstName: 'Delia', lastName: 'Suárez' }]
   const all = buildAgreements({ promotions, ledger, clients })
   const byId = id => all.find(a => a.id === id)
+
+  test('el motivo de la promo viaja al acuerdo; sin motivo queda null', () => {
+    const [withReason, without] = buildAgreements({
+      promotions: [promo('p8', 'z', [2026, 7], [2026, 9], { reason: 'Convenio con la mutualista' }), promo('p9', 'z', [2026, 10], [2026, 10])],
+      ledger: [],
+      clients: []
+    })
+    expect(withReason.reason).toBe('Convenio con la mutualista')
+    expect(without.reason).toBeNull()
+  })
 
   test('el nombre sale de la ficha y, si no está, de la promo', () => {
     expect(byId('p1')).toMatchObject({ firstName: 'Lucía', lastName: 'Pérez', avatarUrl: 'http://img/a' })

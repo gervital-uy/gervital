@@ -19,6 +19,8 @@ function fromDb(p, client = {}) {
     paidAmount: p.paid_amount != null ? Number(p.paid_amount) : null,
     paymentMethod: p.payment_method || null,
     notes: p.notes || null,
+    // Motivo de la promo (al crearla). notes es otra cosa: la nota del cobro.
+    reason: p.reason || null,
     createdAt: p.created_at
   }
 }
@@ -39,9 +41,9 @@ async function callPromoRpc(fn, params, fallback) {
  * @param {number} endYear
  * @param {number} endMonth - 0-indexed
  * @param {number} percent - 1..100
- * @param {string} notes - opcional
+ * @param {string|null} reason - motivo opcional
  */
-export async function createPrepaidPromo(clientId, startYear, startMonth, endYear, endMonth, percent, notes = null) {
+export async function createPrepaidPromo(clientId, startYear, startMonth, endYear, endMonth, percent, reason = null) {
   return callPromoRpc('create_prepaid_promo', {
     p_client_id: clientId,
     p_start_year: startYear,
@@ -49,7 +51,7 @@ export async function createPrepaidPromo(clientId, startYear, startMonth, endYea
     p_end_year: endYear,
     p_end_month: endMonth,
     p_percent: percent,
-    p_notes: notes
+    p_reason: reason
   }, 'Error al crear la promoción')
 }
 

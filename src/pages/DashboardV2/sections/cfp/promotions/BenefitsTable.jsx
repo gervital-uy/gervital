@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import Card from '../../../../../components/ui/Card'
+import Tooltip from '../../../../../components/ui/Tooltip'
 import Avatar from '../../../ui/Avatar'
 import Chip from '../../../ui/Chip'
 import InfoButton from '../../../explain/InfoButton'
@@ -28,6 +29,16 @@ function Progress({ row, history }) {
   )
 }
 
+// El motivo es texto libre: se corta en dos líneas y el tooltip lo muestra entero.
+function ReasonCell({ reason }) {
+  if (!reason) return <span className="text-[12px] text-gray-300">{DASH}</span>
+  return (
+    <Tooltip title={reason}>
+      <p className="text-[12px] text-gray-500 leading-snug line-clamp-2 break-words">{reason}</p>
+    </Tooltip>
+  )
+}
+
 function DiscountCell({ row, history }) {
   if (history) {
     return (
@@ -53,6 +64,7 @@ export default function BenefitsTable({ title, hint, docId, rows, kind, history 
   const isPromo = kind === 'promo'
   const columns = [
     { label: 'Cliente', cls: 'px-5 text-left' },
+    { label: 'Motivo', cls: 'px-2 text-left w-[180px]' },
     { label: 'Plazo', cls: 'px-2 text-left w-[84px]' },
     { label: '% dto', cls: 'px-2 text-center w-[64px] tracking-normal' },
     { label: 'Avance', cls: 'px-2 text-left w-[104px]' },
@@ -77,7 +89,7 @@ export default function BenefitsTable({ title, hint, docId, rows, kind, history 
       </div>
 
       <div className="overflow-x-auto">
-        <table className={`w-full table-fixed ${history && !isPromo ? 'min-w-[620px]' : 'min-w-[740px]'}`}>
+        <table className={`w-full table-fixed ${history && !isPromo ? 'min-w-[800px]' : 'min-w-[920px]'}`}>
           <thead>
             <tr className="bg-gray-50/70 text-[11px] uppercase tracking-wide text-gray-400">
               {columns.map(c => <th key={c.label} scope="col" className={`${c.cls} py-2.5 font-semibold`}>{c.label}</th>)}
@@ -105,6 +117,7 @@ export default function BenefitsTable({ title, hint, docId, rows, kind, history 
                       </div>
                     </div>
                   </td>
+                  <td className="px-2 py-2.5"><ReasonCell reason={r.reason} /></td>
                   <td className="px-2 py-2.5 text-[12px] font-medium text-gray-700">{monthsText(r.months)}</td>
                   <td className="px-2 py-2.5 text-center">
                     <span className={`text-[12px] font-semibold tabular-nums rounded-full px-2 py-0.5 ${isPromo ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>

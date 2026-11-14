@@ -94,12 +94,13 @@ const promotionsDocs = {
     unit: ['con IVA', 'por acuerdo'],
     what: 'Cada promo prepaga: meses seguidos con un porcentaje de descuento sobre la asistencia. El primer mes cobra el paquete entero y los demás quedan cubiertos en $ 0.',
     rows: [
+      { label: 'Motivo', text: 'cargado al crearla' },
       { label: 'Avance', text: 'mes de la promo' },
       { label: 'Dto del mes', text: 'lista − cobrable' },
       { label: 'Paquete', text: 'cobrado o pactado' },
       { label: 'Dto total (historial)', text: 'pactado' }
     ],
-    source: 'Avance es en qué mes de la promo cae el mes elegido. Dto del mes es el descuento de ese mes: su precio de lista menos lo cobrable. Paquete es lo que entró, o el total pactado si todavía no se cobró. En el historial, Dto total es el descuento del paquete entero, guardado al crear la promo. Si el cliente ya tiene otra promo o un descuento pegado a continuación, la fila dice con qué sigue.',
+    source: 'Motivo es el texto opcional que se carga al crear la promo; las promos creadas antes de que existiera no lo tienen. Avance es en qué mes de la promo cae el mes elegido. Dto del mes es el descuento de ese mes: su precio de lista menos lo cobrable. Paquete es lo que entró, o el total pactado si todavía no se cobró. En el historial, Dto total es el descuento del paquete entero, guardado al crear la promo. Si el cliente ya tiene otra promo o un descuento pegado a continuación, la fila dice con qué sigue.',
     caveat: 'Crear, cobrar o cancelar una promo se hace desde la ficha del cliente. Una promo puede tener cualquier cantidad de meses y cualquier porcentaje.'
   }),
 
@@ -108,16 +109,17 @@ const promotionsDocs = {
     return {
       title: 'Otros descuentos',
       unit: ['con IVA', 'por tramo'],
-      what: 'Descuentos sueltos sobre la asistencia, sin paquete ni cobro adelantado. La base no guarda un acuerdo de descuento: cada fila son los meses seguidos de un cliente con el mismo porcentaje.',
+      what: 'Descuentos sueltos sobre la asistencia, sin paquete ni cobro adelantado. La base no guarda un acuerdo de descuento: cada fila son los meses seguidos de un cliente con el mismo porcentaje y el mismo motivo.',
       rows: [
+        { label: 'Motivo', text: 'cargado al aplicarlo' },
         { label: 'Dto del mes', text: 'lista − cobrable' },
         { label: 'Cuota del mes', text: 'asistencia + transporte' },
         { label: 'Dto total (historial)', text: 'meses cobrados' }
       ],
-      source: 'Si el porcentaje cambia de un mes a otro (un descuento escalonado), cada tramo es una fila y la anterior dice con cuánto sigue. La cuota del mes es el servicio del mes: la asistencia con el descuento más el transporte. En el historial, Dto total suma lo descontado en los meses cobrados, reconstruido de lo cobrado: cobrado × % ÷ (100 − %).',
+      source: 'Motivo es el texto opcional que se carga al aplicar el descuento. Si el porcentaje o el motivo cambian de un mes a otro (un descuento escalonado), cada tramo es una fila y la anterior dice con cuánto sigue. La cuota del mes es el servicio del mes: la asistencia con el descuento más el transporte. En el historial, Dto total suma lo descontado en los meses cobrados, reconstruido de lo cobrado: cobrado × % ÷ (100 − %).',
       caveat: missing > 0
         ? `En el rango hay ${plural(missing, 'mes', 'meses')} sin cobrar (o al 100%) sin dato: no suman al Dto total.`
-        : 'La base no guarda el motivo de un descuento, por eso no hay columna de motivo.'
+        : 'Los descuentos aplicados antes de que existiera el motivo no lo tienen.'
     }
   },
 

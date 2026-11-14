@@ -16,7 +16,7 @@ const numOrNull = v => (v == null ? null : Number(v))
 export async function getBenefitLedger() {
   const rows = await supabase
     .from('monthly_invoices')
-    .select('client_id, year, month, discount_percent, promo_id, payment_status, attendance_chargeable_gross')
+    .select('client_id, year, month, discount_percent, discount_reason, promo_id, payment_status, attendance_chargeable_gross')
     .or('discount_percent.gt.0,promo_id.not.is.null')
     .gte('year', ymOfOrdinal(PLATFORM_START_ORD).year)
     .then(unwrap)
@@ -27,6 +27,7 @@ export async function getBenefitLedger() {
       year: r.year,
       month: r.month,
       discountPercent: Number(r.discount_percent) || 0,
+      discountReason: r.discount_reason || null,
       promoId: r.promo_id || null,
       paymentStatus: r.payment_status || 'pending',
       attendanceChargeableGross: numOrNull(r.attendance_chargeable_gross)
