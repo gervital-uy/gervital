@@ -311,6 +311,16 @@ Lógica pura + tests en `src/services/promotions/promotionsView.js`:
 `promoState` (un solo estado por promo), `promoMonthIndex`,
 `promoMonthCollection` (monto a cobrar + nominal tachado), `promoKpis`.
 
+**Motivo** (mig 095): texto libre opcional al crear una promo o aplicar un
+descuento suelto (`BenefitReasonField` en los dos modales). Promo →
+`promotions.reason` (no `notes`: `collect_promo` la pisa con la nota del cobro).
+Descuento suelto → `monthly_invoices.discount_reason`, por mes como
+`discount_percent`. Lo reciben `create_prepaid_promo` y `apply_plan_discount`
+como `p_reason` (default NULL); vacío → NULL, quitar el descuento (0%) o pisarlo
+con una promo lo borra. Se muestra en la columna Motivo del bloque Promociones y
+otros descuentos del dashboard v2, donde las corridas de descuento suelto se
+cortan también por motivo.
+
 ### Flujo de Facturación
 
 ```
