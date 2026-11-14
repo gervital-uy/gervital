@@ -24,9 +24,10 @@ calcula en el cliente con lo que ya existe.
 decisión aunque no necesiten esquema.
 
 **Necesitan esquema, así que quedan fuera:**
-- Columna Motivo en Otros descuentos (B10). `monthly_invoices` no guarda motivo y no hay entidad
-  "acuerdo de descuento". Haría falta un catálogo + columna (o una tabla de acuerdos) y `p_reason` en
-  `apply_plan_discount`.
+- ~~Columna Motivo en Otros descuentos (B10).~~ Hecho el 2026-11-14 a pedido del usuario, que
+  aceptó la migración (095, aplicada): motivo de texto libre opcional en promos y descuentos,
+  columna Motivo en las dos tablas. Sin catálogo: `promotions.reason` y
+  `monthly_invoices.discount_reason`.
 - Costo por chofer y pago por tramo (B12). Nada une un auto de transporte con el prestador que lo
   maneja, ni hay tarifa por tramo: `transport_shift_cars.driver_provider_id` (+ `pay_mode` /
   `per_trip_rate`). Mientras tanto, el costo mensual plano de los choferes se reparte en partes
